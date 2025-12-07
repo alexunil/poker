@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planning Poker</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body data-has-active-voting="{{ 'true' if has_active_voting else 'false' }}" data-enable-unicorn="{{ 'true' if enable_unicorn else 'false' }}" data-unicorn-display-seconds="{{ unicorn_display_seconds }}">
+    {% if need_name %}
+    <!-- Name eingeben -->
+    <div class="container" style="max-width: 500px; margin-top: 3rem;">
+        <article>
+            <h2>🃏 Planning Poker</h2>
+            <p>Bitte gib deinen Namen ein, um zu starten:</p>
+            <form method="POST" action="/set_name">
+                <input type="text" name="name" placeholder="Dein Name" required autofocus>
+                <button type="submit">Los geht's</button>
+            </form>
+        </article>
+    </div>
+
+    {% else %}
+    <!-- 2-Spalten-Layout -->
+    <div class="two-column-layout">
+        <!-- LINKE SPALTE (1/3) -->
+        <div class="left-column">
+            <div style="text-align: center; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--muted-border-color);">
+                <div style="font-size: 3rem; margin-bottom: 0.5rem;">🃏</div>
+                <div style="font-size: 1.3rem; font-weight: bold; margin-bottom: 0.3rem;">Planning Poker</div>
+                <small style="color: var(--muted-color);">Willkommen,</small><br>
+                <strong style="font-size: 1.1rem;">{{ user.name }}</strong>
+
+                <!-- Zuschauer-Toggle -->
+                {% if enable_spectator_mode %}
+                <form method="POST" action="/toggle_spectator" style="margin-top: 0.8rem;">
+                    <label style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-size: 0.75rem; color: var(--muted-color); cursor: pointer;">
+                        <input type="checkbox" {% if user.is_spectator %}checked{% endif %} onchange="this.form.submit()" style="cursor: pointer;">
+                        <span>👁️ Zuschauer-Modus</span>
+                    </label>
+                </form>
+                {% endif %}
+            </div>
+
+            <h3>👥 Team ({{ users|length }})</h3>
+            {% for session_id, u in users.items() %}
+            <div class="team-member">
+                {{ u.name }}
+                {% if u.is_spectator %}
+                    <span style="float: right; font-size: 0.8rem; opacity: 0.6;">👁️</span>
+                {% elif story and story.status == 'voting' %}
+                    {% if u.name in votes %}
+                        <span style="float: right;">✓</span>
+                    {% else %}
+                        <span style="float: right;">⏳</span>
+                    {% endif %}
+                {% endif %}
+            </div>
+            {% endfor %}
+
+            <div class="event-log">
+                <h4>📢 Aktivitäten</h4>
+                {% for event in event_log %}
+                <div class="event-item {{ event.type }}">
+                    {{ event.message }}
+                </div>
+                {% endfor %}
+            </div>
+
+            <a href="/anleitung" target="_blank" class="help-link">📖 Anleitung</a>
+        </div>
+
+        <!-- RECHTE SPALTE (2/3) -->
+        <div class="right-column">
+            <!-- WARTENDE STORIES - Oben, kompakt -->
+            {% if pending_stories %}
+            <div class="pending-stories-section">
+                <h4>📋 Wartende Stories ({{ pending_stories|length }})</h4>
+                <div class="pending-stories-list">
+                    {% for s in pending_stories %}
+                    <div class="pending-story-item" title="{{ s.description if s.description else s.title }}">
+                        <span style="flex: 1; overflow: hidden; text-overflow: ellipsis;">{{ s.title }}</span>
+                        {% if s.creator_name == user.name %}
+                        <form method="POST" action="/start_voting/{{ s.id }}" style="margin: 0; flex-shrink: 0; margin-left: 0.5rem;">
+                            <button type="submit" {% if has_active_voting %}disabled{% endif %}>
+                                {% if has_active_voting %}⏳{% else %}▶{% endif %}
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- SPIELTISCH - Immer sichtbar -->
+            <div class="game-table">
+            {% if story %}
+                <!-- Aktive Story: Voting oder Revealed -->
+                <h3>🎯 {{ story.title }} <small>(Runde {{ story.round }})</small></h3>
+                {% if story.description %}
+                <p style="margin: 0.5rem 0 1rem 0; font-size: 0.9rem;">{{ story.description }}</p>
+                {% endif %}
+                <div class="story-meta" style="margin-bottom: 1rem;">Erstellt von: {{ story.creator_name }}</div>
+
+            {% if story.status == 'voting' %}
+                <!-- Voting Phase -->
+                {% if not user.is_spectator %}
+                <h4>Deine Schätzung</h4>
+                <form method="POST" action="/vote">
+                    <div class="card-container">
+                        {% for num in fibonacci %}
+                        <button type="submit" name="points" value="{{ num }}" class="poker-card">
+                            {{ num }}
+                        </button>
+                        {% endfor %}
+                    </div>
+                </form>
+                {% else %}
+                <div style="text-align: center; padding: 2rem; color: var(--muted-color); font-style: italic;">
+                    <p>👁️ Du bist im Zuschauer-Modus und kannst nicht abstimmen.</p>
+                </div>
+                {% endif %}
+
+                <h4 style="margin-top: 1rem;">Gelegte Karten ({{ votes|length }}/{{ active_users_count }})</h4>
+                <div class="voted-cards">
+                    {% for name, vote_data in votes.items() %}
+                    <div class="voted-card-wrapper">
+                        <div class="poker-card back">🎴</div>
+                        <div class="voted-card-name">{{ name }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                {% if user.name == story.creator_name %}
+                <div style="margin-top: 1rem;">
+                    <button onclick="revealCards()">🔓 Karten aufdecken!</button>
+                </div>
+                {% endif %}
+
+            {% elif story.status == 'revealed' %}
+                <!-- Revealed Phase -->
+                <h4>Ergebnisse</h4>
+
+                <div class="voted-cards">
+                    {% for name, vote_data in votes.items() %}
+                    <div class="voted-card-wrapper">
+                        <div class="poker-card revealed">{{ vote_data.points }}</div>
+                        <div class="voted-card-name">{{ name }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                {% if consensus_type == 'consensus' %}
+                <div class="consensus">
+                    <h4>✅ KONSENS ERREICHT!</h4>
+                    <p style="font-size: 2rem; margin: 0.5rem 0;">{{ suggested_points }}</p>
+                    <p style="font-size: 0.9rem;">Alle haben die gleiche Zahl gewählt.</p>
+                </div>
+                {% if user.name == story.creator_name %}
+                <form method="POST" action="/complete_story">
+                    <input type="hidden" name="final_points" value="{{ suggested_points }}">
+                    <button type="submit">Story mit {{ suggested_points }} Punkten abschließen</button>
+                </form>
+                {% else %}
+                <p style="text-align: center; color: var(--muted-color); font-size: 0.9rem;">Nur {{ story.creator_name }} kann die Story abschließen.</p>
+                {% endif %}
+
+                {% elif consensus_type == 'near_consensus' %}
+                <div class="consensus">
+                    <h4>✅ KONSENS ERREICHT!</h4>
+                    <p style="font-size: 2rem; margin: 0.5rem 0;">{{ suggested_points }}</p>
+                    <p style="font-size: 0.9rem;">Fast alle haben die gleiche Zahl (nur einer weicht um 1 ab).</p>
+                </div>
+                {% if user.name == story.creator_name %}
+                <form method="POST" action="/complete_story">
+                    <input type="hidden" name="final_points" value="{{ suggested_points }}">
+                    <button type="submit">Story mit {{ suggested_points }} Punkten abschließen</button>
+                </form>
+                {% else %}
+                <p style="text-align: center; color: var(--muted-color); font-size: 0.9rem;">Nur {{ story.creator_name }} kann die Story abschließen.</p>
+                {% endif %}
+
+                {% else %}
+                <div class="divergence">
+                    <h4>🔄 KEIN KONSENS</h4>
+                    <p style="font-size: 1.6rem; margin: 0.5rem 0;">
+                        <strong>Empfohlen:</strong> {{ suggested_points }} (höchster Wert)
+                    </p>
+                    {% if alternative_points and alternative_points != suggested_points %}
+                    <p style="font-size: 1.2rem; margin: 0.5rem 0; color: #666;">
+                        <strong>Alternative:</strong> {{ alternative_points }}
+                        {% if vote_distribution and alternative_points in vote_distribution %}
+                        ({{ vote_distribution[alternative_points] }} Stimme{% if vote_distribution[alternative_points] != 1 %}n{% endif %})
+                        {% endif %}
+                    </p>
+                    {% endif %}
+                </div>
+                {% if user.name == story.creator_name %}
+                <!-- Primary Button: Höchster Wert (empfohlen) -->
+                <form method="POST" action="/complete_story" style="display: inline; margin-right: 0.5rem;">
+                    <input type="hidden" name="final_points" value="{{ suggested_points }}">
+                    <button type="submit" class="primary-prominent">
+                        Story mit {{ suggested_points }} Punkten abschließen ⭐
+                    </button>
+                </form>
+
+                <!-- Secondary Button: Alternative (wenn vorhanden) -->
+                {% if alternative_points and alternative_points != suggested_points %}
+                <form method="POST" action="/complete_story" style="display: inline; margin-right: 0.5rem;">
+                    <input type="hidden" name="final_points" value="{{ alternative_points }}">
+                    <button type="submit" class="secondary">
+                        Story mit {{ alternative_points }} Punkten abschließen
+                    </button>
+                </form>
+                {% endif %}
+
+                <!-- Neu abstimmen -->
+                <form method="POST" action="/new_round" style="display: inline;">
+                    <button type="submit" class="secondary">
+                        Neu abstimmen (Runde {{ story.round + 1 }})
+                    </button>
+                </form>
+                {% else %}
+                <p style="text-align: center; color: var(--muted-color); font-size: 0.9rem;">Nur {{ story.creator_name }} kann die Story abschließen oder neu abstimmen.</p>
+                {% endif %}
+                {% endif %}
+            {% endif %}
+
+            {% else %}
+                <!-- Empty State: Keine aktive Story -->
+                <div class="game-table-empty">
+                    <div class="game-table-empty-content">
+                        <div class="game-table-empty-icon">🎯</div>
+                        <div class="game-table-empty-text">No story to estimate, yet.</div>
+                        <div class="game-table-empty-hint">Erstelle eine neue Story oder starte eine wartende Story.</div>
+                    </div>
+                </div>
+            {% endif %}
+            </div>
+
+            <!-- Story-Formular - Ausklappbar -->
+            <details class="story-form-collapsible">
+                <summary>➕ Neue Story erstellen</summary>
+                <form id="storyForm" method="POST" action="/create_story">
+                    <label for="title">Story-Titel*</label>
+                    <input type="text" id="title" name="title" placeholder="z.B. User kann sich einloggen" required>
+
+                    <label for="description">Beschreibung (optional)</label>
+                    <textarea id="description" name="description" rows="2" placeholder="Details zur Story..."></textarea>
+
+                    <input type="hidden" id="start_immediately" name="start_immediately" value="false">
+                    <input type="hidden" id="auto_start" name="auto_start" value="false">
+
+                    <button type="button" onclick="showStoryDialog(event)">Story speichern</button>
+                </form>
+            </details>
+
+            <!-- Vergangene Stories (max 3) - kompakt -->
+            {% if story_history %}
+            <div class="compact-section">
+                <h4>📜 Vergangene Stories</h4>
+                {% for s in story_history %}
+                <div class="story-item completed">
+                    <div class="story-title">{{ s.title }}</div>
+                    <div class="story-meta">
+                        ✅ {{ s.final_points }} Punkte |
+                        {% if s.all_votes %}
+                            {% for v in s.all_votes %}{{ v.name }}:{{ v.points }}{% if not loop.last %}, {% endif %}{% endfor %}
+                        {% endif %}
+                    </div>
+                    <div style="margin-top: 0.5rem;">
+                        <a href="/story/{{ s.id }}" style="font-size: 0.85rem; text-decoration: none;">
+                            💬 {{ s.comment_count if s.comment_count else 0 }} Kommentar{% if s.comment_count != 1 %}e{% endif %} · Details ansehen →
+                        </a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Reset Button -->
+            {% if pending_stories or story_history %}
+            <form method="POST" action="/reset" style="margin-top: 1rem;">
+                <button type="submit" class="secondary" style="width: auto; font-size: 0.85rem; padding: 0.4rem 0.8rem;">Alle Stories zurücksetzen</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Connection Status -->
+    <div class="connection-status">
+        <span id="connection-status">🔄 Verbinde...</span>
+    </div>
+
+    <!-- Story Auto-Start Dialog -->
+    <div class="modal-overlay" id="storyDialog">
+        <div class="modal-content">
+            <h3 id="storyDialogTitle">Story erstellt!</h3>
+            <p id="storyDialogText">Soll die Story sofort zur Abstimmung gestellt werden?</p>
+            <div style="display: flex; gap: 0.5rem; justify-content: center; margin-top: 1rem;">
+                <button id="dialogYes" onclick="submitStoryDialog(true)" style="flex: 1;">Ja</button>
+                <button id="dialogNo" onclick="submitStoryDialog(false)" class="secondary" style="flex: 1;">Nein</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Einhorn Easter Egg -->
+    {% if enable_unicorn %}
+    <div class="unicorn-overlay" id="unicornOverlay">
+        <div class="unicorn-container">
+            <button class="unicorn-close" id="unicornClose" aria-label="Schließen">✕</button>
+            <div class="unicorn-emoji">🦄</div>
+            <div class="unicorn-speech" id="unicornSpeech">
+                Die Weisheit der Schätzung offenbart sich...
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Socket.io Client -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% endif %}
+</body>
+</html>

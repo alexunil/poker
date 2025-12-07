@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anleitung - Planning Poker</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <style>
+        body {
+            padding: 2rem;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 2rem;
+            color: var(--primary);
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .markdown-content {
+            line-height: 1.6;
+        }
+        .markdown-content h1 {
+            border-bottom: 2px solid var(--primary);
+            padding-bottom: 0.5rem;
+            margin-top: 2rem;
+        }
+        .markdown-content h2 {
+            margin-top: 1.5rem;
+            color: var(--primary);
+        }
+        .markdown-content h3 {
+            margin-top: 1rem;
+        }
+        .markdown-content code {
+            background: var(--code-background-color);
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-size: 0.9em;
+        }
+        .markdown-content pre {
+            background: var(--code-background-color);
+            padding: 1rem;
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+        .markdown-content pre code {
+            background: none;
+            padding: 0;
+        }
+        .markdown-content ul, .markdown-content ol {
+            margin-left: 2rem;
+        }
+        .markdown-content li {
+            margin: 0.5rem 0;
+        }
+        .markdown-content blockquote {
+            border-left: 4px solid var(--primary);
+            padding-left: 1rem;
+            margin-left: 0;
+            color: var(--muted-color);
+        }
+        .markdown-content img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 6px;
+        }
+        .markdown-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+        .markdown-content th, .markdown-content td {
+            border: 1px solid var(--muted-border-color);
+            padding: 0.5rem;
+            text-align: left;
+        }
+        .markdown-content th {
+            background: var(--primary-focus);
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← Zurück zur Abstimmung</a>
+
+        <article class="markdown-content">
+            {{ content|safe }}
+        </article>
+
+        <hr style="margin: 3rem 0;">
+        <p style="text-align: center;">
+            <a href="/" class="back-link">← Zurück zur Abstimmung</a>
+        </p>
+    </div>
+</body>
+</html>

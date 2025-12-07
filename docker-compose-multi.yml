@@ -1,0 +1,67 @@
+version: '3.8'
+
+# Planning Poker - Multi-Instance Setup
+# Stage (Testing) + Production
+#
+# Usage:
+#   docker-compose -f docker-compose-multi.yml up -d
+#
+# Access:
+#   Stage:      http://localhost:5001
+#   Production: http://localhost:5000
+
+services:
+  # PRODUCTION Instance
+  poker-prod:
+    build: .
+    container_name: planning-poker-prod
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - DB_PATH=/app/data/planning_poker.db
+    env_file:
+      - .env.prod  # Separate .env file für Production
+    volumes:
+      - poker-prod-data:/app/data
+    restart: unless-stopped
+    networks:
+      - poker-network
+    labels:
+      - "com.poker.environment=production"
+      - "com.poker.description=Production Planning Poker Instance"
+
+  # STAGE Instance (Testing)
+  poker-stage:
+    build: .
+    container_name: planning-poker-stage
+    ports:
+      - "5001:5000"  # External Port 5001, intern bleibt 5000
+    environment:
+      - FLASK_ENV=development
+      - DB_PATH=/app/data/planning_poker.db
+    env_file:
+      - .env.stage  # Separate .env file für Stage
+    volumes:
+      - poker-stage-data:/app/data
+    restart: unless-stopped
+    networks:
+      - poker-network
+    labels:
+      - "com.poker.environment=stage"
+      - "com.poker.description=Stage Planning Poker Instance for Testing"
+
+volumes:
+  poker-prod-data:
+    driver: local
+    labels:
+      - "com.poker.environment=production"
+
+  poker-stage-data:
+    driver: local
+    labels:
+      - "com.poker.environment=stage"
+
+networks:
+  poker-network:
+    driver: bridge

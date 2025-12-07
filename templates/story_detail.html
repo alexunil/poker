@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ story.title }} - Planning Poker</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        .container {
+            max-width: 1200px;
+            padding: 2rem;
+        }
+
+        .btn-back {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background: #6c757d;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            margin-bottom: 2rem;
+            font-weight: bold;
+        }
+
+        .btn-back:hover {
+            background: #5a6268;
+            color: white;
+        }
+
+        .story-header {
+            background: var(--card-background-color);
+            padding: 2rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+            border: 1px solid var(--muted-border-color);
+        }
+
+        .story-header h1 {
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+
+        .story-meta {
+            display: flex;
+            gap: 2rem;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+            color: var(--muted-color);
+            font-size: 0.9rem;
+        }
+
+        .story-meta span {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .votes-section, .comments-section {
+            margin-top: 2rem;
+            padding: 2rem;
+            background: var(--card-background-color);
+            border-radius: 8px;
+            border: 1px solid var(--muted-border-color);
+        }
+
+        .votes-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        .votes-table th,
+        .votes-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--muted-border-color);
+        }
+
+        .votes-table th {
+            background: var(--primary-focus);
+            font-weight: bold;
+        }
+
+        .add-comment {
+            background: var(--primary-focus);
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: bold;
+            color: var(--color);
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--muted-border-color);
+            border-radius: 6px;
+            font-size: 1rem;
+            background: var(--card-background-color);
+            color: var(--color);
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        textarea.form-control {
+            min-height: 120px;
+            resize: vertical;
+            font-family: inherit;
+        }
+
+        .comment-item {
+            padding: 1.5rem;
+            border-left: 4px solid var(--primary);
+            background: var(--card-background-color);
+            margin-bottom: 1rem;
+            border-radius: 6px;
+        }
+
+        .comment-item[data-type="reasoning"] {
+            border-left-color: #28a745;
+        }
+
+        .comment-item[data-type="execution"] {
+            border-left-color: #ffc107;
+        }
+
+        .comment-item[data-type="acceptance"] {
+            border-left-color: #dc3545;
+        }
+
+        .comment-item[data-type="general"] {
+            border-left-color: var(--primary);
+        }
+
+        .comment-header {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .comment-header strong {
+            color: var(--primary);
+        }
+
+        .comment-type-badge {
+            background: var(--primary);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+
+        .comment-type-badge.reasoning {
+            background: #28a745;
+        }
+
+        .comment-type-badge.execution {
+            background: #ffc107;
+            color: #000;
+        }
+
+        .comment-type-badge.acceptance {
+            background: #dc3545;
+        }
+
+        .comment-time {
+            color: var(--muted-color);
+            font-size: 0.85rem;
+            margin-left: auto;
+        }
+
+        .comment-text {
+            white-space: pre-wrap;
+            line-height: 1.6;
+            color: var(--color);
+        }
+
+        .no-comments {
+            text-align: center;
+            padding: 2rem;
+            color: var(--muted-color);
+            font-style: italic;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: bold;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        h2 {
+            color: var(--primary);
+            margin-bottom: 1rem;
+        }
+
+        h3 {
+            color: var(--color);
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Navigation zurück -->
+        <a href="/" class="btn-back">← Zurück zur Übersicht</a>
+
+        <!-- Story-Info -->
+        <div class="story-header">
+            <h1>{{ story.title }}</h1>
+            {% if story.description %}
+            <p>{{ story.description }}</p>
+            {% endif %}
+            <div class="story-meta">
+                <span>👤 Erstellt von: {{ story.creator_name }}</span>
+                <span>🎯 Finale Punktzahl: <strong>{{ story.final_points }}</strong></span>
+                <span>✅ Abgeschlossen: {{ story.completed_at }}</span>
+            </div>
+        </div>
+
+        <!-- Alle Votes anzeigen -->
+        <div class="votes-section">
+            <h2>📊 Abstimmungsergebnisse</h2>
+            {% if votes %}
+            <table class="votes-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Punktzahl</th>
+                        <th>Runde</th>
+                        <th>Abgegeben am</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for vote in votes %}
+                    <tr>
+                        <td>{{ vote.name }}</td>
+                        <td><strong>{{ vote.points }}</strong></td>
+                        <td>{{ vote.round }}</td>
+                        <td>{{ vote.voted_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="no-comments">Keine Votes für diese Story vorhanden.</p>
+            {% endif %}
+        </div>
+
+        <!-- Kommentare -->
+        <div class="comments-section">
+            <h2>💬 Kommentare ({{ comments|length }})</h2>
+
+            <!-- Kommentar hinzufügen -->
+            <div class="add-comment">
+                <h3>Kommentar hinzufügen</h3>
+                <form method="POST" action="/story/{{ story.id }}/comment" id="commentForm">
+                    <div class="form-group">
+                        <label for="comment_type">Kategorie:</label>
+                        <select name="comment_type" id="comment_type" class="form-control">
+                            <option value="general">💡 Allgemein</option>
+                            <option value="reasoning">✅ Begründung für Punktzahl</option>
+                            <option value="execution">⚠️ Hinweise zur Ausführung</option>
+                            <option value="acceptance">📋 Akzeptanzkriterien</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="comment_text">Kommentar:</label>
+                        <textarea name="comment_text"
+                                  id="comment_text"
+                                  class="form-control"
+                                  placeholder="Dein Kommentar..."
+                                  required></textarea>
+                    </div>
+
+                    <button type="submit" class="btn-primary">
+                        💬 Kommentar speichern
+                    </button>
+                </form>
+            </div>
+
+            <!-- Existierende Kommentare -->
+            <div class="comments-list" id="commentsList">
+                {% if comments %}
+                    {% for comment in comments %}
+                    <div class="comment-item" data-type="{{ comment.comment_type }}">
+                        <div class="comment-header">
+                            <strong>{{ comment.user_name }}</strong>
+                            <span class="comment-type-badge {{ comment.comment_type }}">
+                                {% if comment.comment_type == 'reasoning' %}✅ Begründung
+                                {% elif comment.comment_type == 'execution' %}⚠️ Ausführung
+                                {% elif comment.comment_type == 'acceptance' %}📋 Akzeptanz
+                                {% else %}💡 Allgemein{% endif %}
+                            </span>
+                            <span class="comment-time">{{ comment.created_at }}</span>
+                        </div>
+                        <div class="comment-text">{{ comment.comment_text }}</div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="no-comments">Noch keine Kommentare vorhanden. Sei der Erste!</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // WebSocket für Live-Updates
+        const socket = io();
+
+        // Form-Submission via AJAX für bessere UX
+        document.getElementById('commentForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(e.target);
+            const response = await fetch(e.target.action, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                // Reload um neue Kommentare zu zeigen
+                window.location.reload();
+            } else {
+                const data = await response.json();
+                alert('Fehler beim Speichern: ' + (data.error || 'Unbekannter Fehler'));
+            }
+        });
+
+        // Live-Update wenn Kommentar hinzugefügt wurde
+        socket.on('comment_added', function(data) {
+            if (data.story_id === {{ story.id }}) {
+                // Reload um neuen Kommentar zu zeigen
+                window.location.reload();
+            }
+        });
+    </script>
+</body>
+</html>

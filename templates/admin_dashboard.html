@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Planning Poker</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <style>
+        .navbar {
+            background: var(--card-background-color);
+            border-bottom: 1px solid var(--muted-border-color);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .navbar h1 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+
+        .navbar-actions {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .main-content {
+            padding: 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--card-background-color);
+            padding: 1.5rem;
+            border-radius: var(--border-radius);
+            border: 1px solid var(--muted-border-color);
+            text-align: center;
+        }
+
+        .stat-card h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 2.5rem;
+            color: var(--primary);
+        }
+
+        .stat-card p {
+            margin: 0;
+            color: var(--muted-color);
+        }
+
+        .section {
+            margin-bottom: 3rem;
+        }
+
+        .section h2 {
+            margin-bottom: 1rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .status-pending { background: #ffd700; color: #000; }
+        .status-voting { background: #4a90e2; color: #fff; }
+        .status-revealed { background: #ff9800; color: #fff; }
+        .status-completed { background: #4caf50; color: #fff; }
+
+        .votes-list {
+            font-size: 0.875rem;
+            color: var(--muted-color);
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 3rem;
+            color: var(--muted-color);
+        }
+
+        .filter-controls {
+            margin-bottom: 1rem;
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .filter-controls input,
+        .filter-controls select {
+            margin: 0;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .navbar {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .navbar-actions {
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            table {
+                font-size: 0.875rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <h1>📊 Admin Dashboard</h1>
+        <div class="navbar-actions">
+            <a href="{{ url_for('export_stories_markdown') }}" role="button" class="secondary" download>
+                📥 Stories exportieren (.md)
+            </a>
+            <a href="{{ url_for('index') }}" role="button" class="secondary">Zur App</a>
+            <form method="POST" action="{{ url_for('admin_logout') }}" style="margin: 0;">
+                <button type="submit" class="contrast">Logout</button>
+            </form>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <!-- Statistics -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>{{ total_stories }}</h3>
+                <p>Gesamt Stories</p>
+            </div>
+            <div class="stat-card">
+                <h3>{{ total_users }}</h3>
+                <p>Gesamt Teilnehmer</p>
+            </div>
+            <div class="stat-card">
+                <h3>{{ stories | selectattr('status', 'equalto', 'completed') | list | length }}</h3>
+                <p>Abgeschlossen</p>
+            </div>
+        </div>
+
+        <!-- Story Historie -->
+        <section class="section">
+            <h2>📝 Story Historie</h2>
+
+            {% if stories %}
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Titel</th>
+                            <th>Ersteller</th>
+                            <th>Status</th>
+                            <th>Runde</th>
+                            <th>Punkte</th>
+                            <th>Teilnehmer</th>
+                            <th>Kommentare</th>
+                            <th>Erstellt</th>
+                            <th>Abgeschlossen</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for story in stories %}
+                        <tr>
+                            <td>{{ story.id }}</td>
+                            <td>
+                                <strong>{{ story.title }}</strong>
+                                {% if story.description %}
+                                <br><small>{{ story.description[:50] }}{% if story.description|length > 50 %}...{% endif %}</small>
+                                {% endif %}
+                            </td>
+                            <td>{{ story.creator_name }}</td>
+                            <td>
+                                <span class="status-badge status-{{ story.status }}">
+                                    {{ story.status }}
+                                </span>
+                            </td>
+                            <td>{{ story.round }}</td>
+                            <td>
+                                {% if story.final_points is not none %}
+                                    <strong>{{ story.final_points }}</strong>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if story.all_votes %}
+                                <div class="votes-list">
+                                    {% set votes_by_round = {} %}
+                                    {% for vote in story.all_votes %}
+                                        {% set round_num = vote.round %}
+                                        {% if round_num not in votes_by_round %}
+                                            {% set _ = votes_by_round.update({round_num: []}) %}
+                                        {% endif %}
+                                        {% set _ = votes_by_round[round_num].append(vote) %}
+                                    {% endfor %}
+
+                                    {% for round_num in votes_by_round.keys()|sort %}
+                                        <div style="margin-bottom: 0.3rem;">
+                                            <strong style="color: var(--muted-color);">R{{ round_num }}:</strong>
+                                            {% for vote in votes_by_round[round_num] %}
+                                                {{ vote.name }}:{{ vote.points }}{% if not loop.last %}, {% endif %}
+                                            {% endfor %}
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if story.status == 'completed' %}
+                                    <a href="/story/{{ story.id }}" target="_blank">
+                                        💬 {{ story.comment_count if story.comment_count else 0 }}
+                                    </a>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>
+                                <small>{{ story.created_at }}</small>
+                            </td>
+                            <td>
+                                {% if story.completed_at %}
+                                    <small>{{ story.completed_at }}</small>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="no-data">
+                <p>Noch keine Stories vorhanden.</p>
+            </div>
+            {% endif %}
+        </section>
+
+        <!-- User Aktivität -->
+        <section class="section">
+            <h2>👥 User Aktivität</h2>
+
+            {% if users %}
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Erstes Login</th>
+                            <th>Letztes Login</th>
+                            <th>Anzahl Votes</th>
+                            <th>Letzter Vote</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td><strong>{{ user.name }}</strong></td>
+                            <td><small>{{ user.first_seen }}</small></td>
+                            <td><small>{{ user.last_seen }}</small></td>
+                            <td>{{ user.vote_count }}</td>
+                            <td>
+                                {% if user.last_vote %}
+                                    <small>{{ user.last_vote }}</small>
+                                {% else %}
+                                    <small>-</small>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="no-data">
+                <p>Noch keine User vorhanden.</p>
+            </div>
+            {% endif %}
+        </section>
+    </main>
+</body>
+</html>

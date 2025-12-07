@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  poker-app:
+    build: .
+    container_name: planning-poker
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+    env_file:
+      - .env
+    volumes:
+      # Datenbank-Persistenz
+      - poker-data:/app/data
+      # Für Development: Live-Reload (auskommentiert)
+      # - ./:/app
+    restart: unless-stopped
+    networks:
+      - poker-network
+
+volumes:
+  poker-data:
+    driver: local
+
+networks:
+  poker-network:
+    driver: bridge
