@@ -39,10 +39,11 @@ wheels/
 .idea/
 .claude/
 
-# Documentation (nur README behalten)
+# Documentation (nur README und BENUTZERANLEITUNG behalten)
 *.md
 !README.md
 !README_MVP.md
+!BENUTZERANLEITUNG.md
 
 # Logs
 *.log

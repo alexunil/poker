@@ -403,6 +403,134 @@ server {
 }
 ```
 
+### Beispiel HAProxy Reverse Proxy
+
+**WICHTIG für WebSocket:** HAProxy benötigt erhöhte Timeouts für WebSocket-Verbindungen!
+
+`/etc/haproxy/haproxy.cfg`:
+
+```haproxy
+global
+    log /dev/log local0
+    log /dev/log local1 notice
+    chroot /var/lib/haproxy
+    stats socket /run/haproxy/admin.sock mode 660 level admin
+    stats timeout 30s
+    user haproxy
+    group haproxy
+    daemon
+
+defaults
+    log     global
+    mode    http
+    option  httplog
+    option  dontlognull
+    timeout connect 5000
+    timeout client  50000
+    timeout server  50000
+
+# Frontend für Production
+frontend planning_poker_prod
+    bind *:80
+    # Optional: bind *:443 ssl crt /path/to/cert.pem
+
+    acl is_prod hdr(host) -i planning-poker.your-company.com
+    use_backend poker_prod_backend if is_prod
+
+# Frontend für Stage
+frontend planning_poker_stage
+    bind *:8080
+    # Optional: andere Domain/Port
+
+    acl is_stage hdr(host) -i planning-poker-stage.your-company.com
+    use_backend poker_stage_backend if is_stage
+
+# Backend für Production - MIT WEBSOCKET TIMEOUTS!
+backend poker_prod_backend
+    mode http
+    balance roundrobin
+
+    # WICHTIG: WebSocket Timeouts erhöhen!
+    timeout server 3600s    # 1 Stunde
+    timeout tunnel 3600s    # 1 Stunde für WebSocket
+    timeout client 3600s    # 1 Stunde
+
+    # WebSocket Header
+    http-request set-header X-Forwarded-For %[src]
+    http-request set-header X-Forwarded-Proto https if { ssl_fc }
+
+    # Server
+    server poker_prod 127.0.0.1:5000 check
+
+# Backend für Stage - MIT WEBSOCKET TIMEOUTS!
+backend poker_stage_backend
+    mode http
+    balance roundrobin
+
+    # WICHTIG: WebSocket Timeouts erhöhen!
+    timeout server 3600s    # 1 Stunde
+    timeout tunnel 3600s    # 1 Stunde für WebSocket
+    timeout client 3600s    # 1 Stunde
+
+    # WebSocket Header
+    http-request set-header X-Forwarded-For %[src]
+    http-request set-header X-Forwarded-Proto https if { ssl_fc }
+
+    # Server
+    server poker_stage 127.0.0.1:5001 check
+```
+
+**Erklärung der Timeouts:**
+
+- **`timeout client 3600s`**: Client → HAProxy (Browser bleibt verbunden)
+- **`timeout server 3600s`**: HAProxy → Backend Server (Flask-App)
+- **`timeout tunnel 3600s`**: Spezifisch für WebSocket/Tunnel-Verbindungen
+
+**Warum 1 Stunde (3600s)?**
+- Planning Poker Sessions können länger dauern (Diskussionen, Pausen)
+- WebSocket-Verbindungen sind idle während Diskussionen
+- Flask-SocketIO sendet Heartbeats, aber bei langen Pausen reicht das nicht
+
+**Alternative: Kürzere Timeouts mit Heartbeats**
+Wenn du kürzere Timeouts bevorzugst (z.B. 600s = 10 Minuten), stelle sicher dass Flask-SocketIO Ping-Pong aktiviert ist:
+
+In `app.py` ist dies bereits konfiguriert:
+```python
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    ping_timeout=60,      # Server wartet 60s auf Pong
+    ping_interval=25      # Server sendet alle 25s ein Ping
+)
+```
+
+Mit diesen Werten sollten auch 600s Timeout ausreichen.
+
+**HAProxy Konfiguration testen:**
+
+```bash
+# Konfiguration prüfen
+sudo haproxy -c -f /etc/haproxy/haproxy.cfg
+
+# HAProxy neustarten
+sudo systemctl restart haproxy
+
+# Status prüfen
+sudo systemctl status haproxy
+
+# Logs live anzeigen
+sudo tail -f /var/log/haproxy.log
+```
+
+**Häufiger Fehler ohne erhöhte Timeouts:**
+
+Ohne die erhöhten Timeouts siehst du im Browser-Developer-Tools (Console):
+```
+WebSocket connection to 'ws://...' failed: Connection closed before receiving handshake response
+```
+
+Oder die WebSocket-Verbindung bricht nach 50 Sekunden ab (Standard-Timeout).
+
 ## 🐛 Troubleshooting
 
 ### Container startet nicht
@@ -441,9 +569,82 @@ docker volume inspect poker-prod-data
 
 ### WebSocket-Verbindung schlägt fehl
 
-- **Reverse Proxy**: Stelle sicher dass WebSocket-Upgrade Header weitergeleitet werden
-- **Firewall**: Port muss offen sein
-- **Browser**: Prüfe Browser-Console auf Fehler
+**Symptome:**
+- WebSocket-Verbindung bricht nach ~50 Sekunden ab
+- Browser-Console zeigt: `WebSocket connection closed`
+- Live-Updates funktionieren nicht (keine Echtzeit-Synchronisation)
+
+**Diagnose:**
+
+```bash
+# Browser Developer Tools öffnen (F12) → Console Tab
+# Suche nach Fehlern wie:
+# "WebSocket connection to 'ws://...' failed"
+# "Connection closed before receiving handshake response"
+```
+
+**Lösungen:**
+
+1. **HAProxy Timeouts zu niedrig** (häufigstes Problem!)
+   ```bash
+   # Prüfe HAProxy Konfiguration
+   grep -A 5 "timeout" /etc/haproxy/haproxy.cfg
+
+   # Stelle sicher dass im Backend:
+   # timeout server 3600s
+   # timeout tunnel 3600s
+   # timeout client 3600s
+
+   # Nach Änderung neu laden
+   sudo systemctl reload haproxy
+   ```
+
+2. **nginx: WebSocket-Upgrade Header fehlen**
+   ```nginx
+   # In nginx Config prüfen:
+   proxy_http_version 1.1;
+   proxy_set_header Upgrade $http_upgrade;
+   proxy_set_header Connection "upgrade";
+   ```
+
+3. **Firewall blockiert WebSocket**
+   ```bash
+   # Prüfe ob Port offen ist
+   sudo ufw status
+   sudo iptables -L -n
+
+   # Port öffnen
+   sudo ufw allow 5000/tcp
+   ```
+
+4. **Flask-SocketIO läuft nicht**
+   ```bash
+   # Prüfe Container-Logs
+   docker logs planning-poker-prod | grep -i websocket
+   docker logs planning-poker-prod | grep -i socket.io
+
+   # Sollte zeigen:
+   # "WebSocket transport"
+   # "Socket.IO is running in eventlet mode"
+   ```
+
+5. **Browser-Kompatibilität**
+   - Verwende modernen Browser (Chrome, Firefox, Safari, Edge)
+   - Deaktiviere Browser-Erweiterungen die WebSocket blockieren könnten
+   - Teste in Incognito-Modus
+
+**Test-URL für WebSocket:**
+
+```bash
+# Von einem Client-Rechner testen
+curl -i -N -H "Connection: Upgrade" \
+  -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" \
+  -H "Sec-WebSocket-Key: test" \
+  http://your-server:5000/socket.io/
+
+# Erwartete Antwort: HTTP 101 Switching Protocols
+```
 
 ## 📋 Cheat Sheet
 
