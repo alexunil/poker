@@ -39,7 +39,7 @@ app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", secrets.token_hex(16))
 # Sessions bleiben für 10 Jahre gültig (praktisch permanent)
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=3650)
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="gevent")
 
 # Admin Configuration
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")

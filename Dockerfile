@@ -25,7 +25,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=40s \
 CMD ["python", "app.py"]
 
 # Production (Alternative mit Gunicorn - erfordert Code-Anpassung):
-# CMD ["gunicorn", "--worker-class", "eventlet", "-w", "1", "-b", "0.0.0.0:5000", "--log-level", "info", "app:app"]
+# CMD ["gunicorn", "--worker-class", "gevent", "-w", "1", "-b", "0.0.0.0:5000", "--log-level", "info", "app:app"]
 #
 # WICHTIG: Für Gunicorn muss app.py angepasst werden:
 # - socketio.run() nur in if __name__ == "__main__"
