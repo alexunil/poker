@@ -67,6 +67,28 @@ def init_db(db_path: str = "planning_poker.db"):
         )
     """)
 
+    # Migration: auto_start Feld hinzufügen (BEFORE indexes!)
+    try:
+        cursor.execute("SELECT auto_start FROM stories LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE stories ADD COLUMN auto_start BOOLEAN DEFAULT 0")
+        print("✅ Migration: auto_start Spalte hinzugefügt")
+
+    # Migration: source Feld zu Stories hinzufügen (BEFORE indexes!)
+    try:
+        cursor.execute("SELECT source FROM stories LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE stories ADD COLUMN source TEXT DEFAULT 'manual'")
+        print("✅ Migration: source Spalte hinzugefügt")
+
+    # Migration: jira_key Feld zu Stories hinzufügen (BEFORE indexes!)
+    try:
+        cursor.execute("SELECT jira_key FROM stories LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE stories ADD COLUMN jira_key TEXT")
+        print("✅ Migration: jira_key Spalte hinzugefügt")
+
+    # Now create indexes (after migrations ensured columns exist)
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_stories_status
         ON stories(status)
@@ -192,14 +214,6 @@ def init_db(db_path: str = "planning_poker.db"):
     # Schema-Version setzen
     cursor.execute("INSERT OR IGNORE INTO schema_version (version) VALUES (1)")
 
-    # Migration: auto_start Feld hinzufügen (für Feature 5)
-    try:
-        cursor.execute("SELECT auto_start FROM stories LIMIT 1")
-    except sqlite3.OperationalError:
-        # Spalte existiert nicht, füge sie hinzu
-        cursor.execute("ALTER TABLE stories ADD COLUMN auto_start BOOLEAN DEFAULT 0")
-        print("✅ Migration: auto_start Spalte hinzugefügt")
-
     # Migration: is_spectator Feld zu Users hinzufügen
     try:
         cursor.execute("SELECT is_spectator FROM users LIMIT 1")
@@ -207,20 +221,6 @@ def init_db(db_path: str = "planning_poker.db"):
         # Spalte existiert nicht, füge sie hinzu
         cursor.execute("ALTER TABLE users ADD COLUMN is_spectator BOOLEAN DEFAULT 0")
         print("✅ Migration: is_spectator Spalte hinzugefügt")
-
-    # Migration: source Feld zu Stories hinzufügen
-    try:
-        cursor.execute("SELECT source FROM stories LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE stories ADD COLUMN source TEXT DEFAULT 'manual'")
-        print("✅ Migration: source Spalte hinzugefügt")
-
-    # Migration: jira_key Feld zu Stories hinzufügen
-    try:
-        cursor.execute("SELECT jira_key FROM stories LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE stories ADD COLUMN jira_key TEXT")
-        print("✅ Migration: jira_key Spalte hinzugefügt")
 
     conn.commit()
     conn.close()
