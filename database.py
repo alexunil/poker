@@ -794,6 +794,54 @@ def get_all_users_with_activity() -> List[Dict]:
         return [row_to_dict(row) for row in cursor.fetchall()]
 
 
+def get_stories_without_embeddings() -> Dict[str, Any]:
+    """
+    Gibt Statistiken über Stories ohne Embeddings zurück
+
+    Returns:
+        Dict mit: total_completed, stories_with_embeddings, stories_without_embeddings, story_ids_without_embeddings
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        # Alle completed Stories zählen
+        cursor.execute(
+            """SELECT COUNT(*) as count FROM stories
+               WHERE status = 'completed' AND final_points IS NOT NULL"""
+        )
+        total_completed = cursor.fetchone()["count"]
+
+        # Stories mit Embeddings (die Chunks haben)
+        cursor.execute(
+            """SELECT COUNT(DISTINCT s.id) as count
+               FROM stories s
+               INNER JOIN ai_chunks c ON c.source_type = 'story' AND c.source_id = s.id
+               WHERE s.status = 'completed' AND s.final_points IS NOT NULL"""
+        )
+        stories_with_embeddings = cursor.fetchone()["count"]
+
+        # IDs der Stories ohne Embeddings
+        cursor.execute(
+            """SELECT s.id, s.title, s.final_points, s.created_at
+               FROM stories s
+               WHERE s.status = 'completed'
+                 AND s.final_points IS NOT NULL
+                 AND NOT EXISTS (
+                     SELECT 1 FROM ai_chunks c
+                     WHERE c.source_type = 'story' AND c.source_id = s.id
+                 )
+               ORDER BY s.created_at DESC"""
+        )
+        stories_without = [row_to_dict(row) for row in cursor.fetchall()]
+
+        return {
+            "total_completed": total_completed,
+            "stories_with_embeddings": stories_with_embeddings,
+            "stories_without_embeddings": len(stories_without),
+            "missing_stories": stories_without
+        }
+
+
 # ============================================================================
 # COMMENT FUNCTIONS
 # ============================================================================

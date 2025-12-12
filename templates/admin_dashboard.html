@@ -175,6 +175,22 @@ VK-123,Weiterer Titel,Weitere Beschreibung...,5</code></pre>
             <div id="import-result" style="margin-top: 1rem; display: none;"></div>
         </section>
 
+        <!-- AI Embeddings Section -->
+        <section class="section">
+            <h2>🤖 KI Embeddings</h2>
+            <p>Verwalte Embeddings für semantische Suche und KI-Schätzungen.</p>
+
+            <div id="embedding-status" style="margin-top: 1rem;">
+                <p>⏳ Lade Status...</p>
+            </div>
+
+            <button id="generate-embeddings-btn" style="margin-top: 1rem;" disabled>
+                ⚙️ Fehlende Embeddings generieren
+            </button>
+
+            <div id="embedding-result" style="margin-top: 1rem; display: none;"></div>
+        </section>
+
         <!-- Statistics -->
         <div class="stats-grid">
             <div class="stat-card">
@@ -402,6 +418,127 @@ VK-123,Weiterer Titel,Weitere Beschreibung...,5</code></pre>
                 importBtn.textContent = '📥 CSV importieren';
             }
         });
+
+        // ============================================================================
+        // AI Embeddings Handler
+        // ============================================================================
+
+        // Load embedding status on page load
+        async function loadEmbeddingStatus() {
+            const statusDiv = document.getElementById('embedding-status');
+            const generateBtn = document.getElementById('generate-embeddings-btn');
+
+            try {
+                const response = await fetch('/admin/embedding-status');
+                const data = await response.json();
+
+                if (data.error) {
+                    statusDiv.innerHTML = `<article style="background: #ff4444; color: white;">❌ Fehler: ${data.error}</article>`;
+                    return;
+                }
+
+                const { total_completed, stories_with_embeddings, stories_without_embeddings } = data;
+
+                let statusHTML = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">';
+                statusHTML += `<div style="background: var(--card-background-color); padding: 1rem; border-radius: var(--border-radius); border: 1px solid var(--muted-border-color);">
+                    <h4 style="margin: 0; color: var(--primary);">${total_completed}</h4>
+                    <p style="margin: 0; font-size: 0.875rem;">Abgeschlossene Stories</p>
+                </div>`;
+                statusHTML += `<div style="background: var(--card-background-color); padding: 1rem; border-radius: var(--border-radius); border: 1px solid var(--muted-border-color);">
+                    <h4 style="margin: 0; color: #4caf50;">${stories_with_embeddings}</h4>
+                    <p style="margin: 0; font-size: 0.875rem;">Mit Embeddings</p>
+                </div>`;
+                statusHTML += `<div style="background: var(--card-background-color); padding: 1rem; border-radius: var(--border-radius); border: 1px solid var(--muted-border-color);">
+                    <h4 style="margin: 0; color: ${stories_without_embeddings > 0 ? '#ff9800' : '#4caf50'};">${stories_without_embeddings}</h4>
+                    <p style="margin: 0; font-size: 0.875rem;">Ohne Embeddings</p>
+                </div>`;
+                statusHTML += '</div>';
+
+                if (stories_without_embeddings > 0) {
+                    statusHTML += `<p style="margin-top: 1rem; color: var(--muted-color);">
+                        <strong>Hinweis:</strong> ${stories_without_embeddings} Stories benötigen noch Embeddings für KI-Schätzungen.
+                    </p>`;
+                }
+
+                statusDiv.innerHTML = statusHTML;
+
+                // Enable button if there are stories without embeddings
+                generateBtn.disabled = stories_without_embeddings === 0;
+                if (stories_without_embeddings === 0) {
+                    generateBtn.textContent = '✅ Alle Stories haben Embeddings';
+                }
+
+            } catch (error) {
+                statusDiv.innerHTML = `<article style="background: #ff4444; color: white;">❌ Fehler beim Laden: ${error.message}</article>`;
+            }
+        }
+
+        // Generate embeddings
+        document.getElementById('generate-embeddings-btn').addEventListener('click', async () => {
+            const generateBtn = document.getElementById('generate-embeddings-btn');
+            const resultDiv = document.getElementById('embedding-result');
+
+            if (!confirm('Embeddings für alle fehlenden Stories generieren? Dies kann einige Minuten dauern.')) {
+                return;
+            }
+
+            // Show loading state
+            generateBtn.disabled = true;
+            generateBtn.textContent = '⏳ Generiere Embeddings...';
+            resultDiv.style.display = 'none';
+
+            try {
+                const response = await fetch('/admin/generate-embeddings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        provider: 'sentence_transformers',
+                        strategy: 'story'
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    resultDiv.innerHTML = `<article style="background: #ff4444; color: white;"><strong>❌ Fehler:</strong> ${result.error}</article>`;
+                } else {
+                    let message = `<article style="background: #4caf50; color: white;">
+                        <strong>✅ Embeddings generiert!</strong><br>
+                        Verarbeitet: ${result.processed} Stories<br>
+                        Fehler: ${result.errors}
+                    </article>`;
+
+                    if (result.error_messages && result.error_messages.length > 0) {
+                        message += `<article style="background: #ff9800; color: white; margin-top: 0.5rem;">
+                            <strong>⚠️ Fehler:</strong><br>
+                            ${result.error_messages.join('<br>')}
+                        </article>`;
+                    }
+
+                    resultDiv.innerHTML = message;
+
+                    // Reload status after 2 seconds
+                    setTimeout(() => {
+                        loadEmbeddingStatus();
+                        resultDiv.style.display = 'none';
+                    }, 3000);
+                }
+
+                resultDiv.style.display = 'block';
+
+            } catch (error) {
+                resultDiv.innerHTML = `<article style="background: #ff4444; color: white;"><strong>❌ Fehler:</strong> ${error.message}</article>`;
+                resultDiv.style.display = 'block';
+            } finally {
+                generateBtn.disabled = false;
+                generateBtn.textContent = '⚙️ Fehlende Embeddings generieren';
+            }
+        });
+
+        // Load status on page load
+        loadEmbeddingStatus();
     </script>
 </body>
 </html>

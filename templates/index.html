@@ -46,17 +46,24 @@
             <h3>👥 Team ({{ users|length }})</h3>
             {% for session_id, u in users.items() %}
             <div class="team-member">
-                {{ u.name }}
-                {% if ai_available and u.name == ai_user_name %}
-                    <span class="ai-badge" style="float: none; margin-left: 0.3rem;">🤖 AI</span>
-                {% endif %}
+                <span class="team-member-name">
+                    {{ u.name }}
+                    {% if ai_available and u.name == ai_user_name %}
+                        <span class="ai-badge" style="margin-left: 0.3rem;">🤖 AI</span>
+                        {% if story and story.status == 'revealed' %}
+                        <button class="btn-ai-reasoning-inline" onclick="showAiReasoning({{ story.id }})" title="AI-Begründung anzeigen">
+                            💭
+                        </button>
+                        {% endif %}
+                    {% endif %}
+                </span>
                 {% if u.is_spectator %}
-                    <span style="float: right; font-size: 0.8rem; opacity: 0.6;">👁️</span>
+                    <span class="team-member-status" style="font-size: 0.8rem; opacity: 0.6;">👁️</span>
                 {% elif story and story.status == 'voting' %}
                     {% if u.name in votes %}
-                        <span style="float: right;">✓</span>
+                        <span class="team-member-status">✓</span>
                     {% else %}
-                        <span style="float: right;">⏳</span>
+                        <span class="team-member-status">⏳</span>
                     {% endif %}
                 {% endif %}
             </div>
@@ -121,10 +128,10 @@
                 <!-- Voting Phase -->
                 {% if not user.is_spectator %}
                 <h4>Deine Schätzung</h4>
-                <form method="POST" action="/vote">
+                <form method="POST" action="/vote" id="vote-form">
                     <div class="card-container">
                         {% for num in fibonacci %}
-                        <button type="submit" name="points" value="{{ num }}" class="poker-card">
+                        <button type="submit" name="points" value="{{ num }}" class="poker-card vote-card{% if current_user_vote == num %} selected{% endif %}">
                             {{ num }}
                         </button>
                         {% endfor %}
@@ -142,9 +149,10 @@
                     <div class="voted-card-wrapper">
                         <div class="poker-card back">🎴</div>
                         <div class="voted-card-name">
-                            {{ name }}
                             {% if ai_available and name == ai_user_name %}
-                            <span class="ai-badge">🤖 AI</span>
+                            🤖
+                            {% else %}
+                            {{ name }}
                             {% endif %}
                         </div>
                     </div>
@@ -166,16 +174,12 @@
                     <div class="voted-card-wrapper">
                         <div class="poker-card revealed">{{ vote_data.points }}</div>
                         <div class="voted-card-name">
-                            {{ name }}
                             {% if ai_available and name == ai_user_name %}
-                            <span class="ai-badge">🤖 AI</span>
+                            🤖
+                            {% else %}
+                            {{ name }}
                             {% endif %}
                         </div>
-                        {% if ai_available and name == ai_user_name %}
-                        <button class="btn-ai-reasoning" onclick="showAiReasoning({{ story.id }})" title="AI-Begründung anzeigen">
-                            💭 Begründung
-                        </button>
-                        {% endif %}
                     </div>
                     {% endfor %}
                 </div>
@@ -185,21 +189,6 @@
                     <h4>✅ KONSENS ERREICHT!</h4>
                     <p style="font-size: 2rem; margin: 0.5rem 0;">{{ suggested_points }}</p>
                     <p style="font-size: 0.9rem;">Alle haben die gleiche Zahl gewählt.</p>
-                </div>
-                {% if user.name == story.creator_name %}
-                <form method="POST" action="/complete_story">
-                    <input type="hidden" name="final_points" value="{{ suggested_points }}">
-                    <button type="submit">Story mit {{ suggested_points }} Punkten abschließen</button>
-                </form>
-                {% else %}
-                <p style="text-align: center; color: var(--muted-color); font-size: 0.9rem;">Nur {{ story.creator_name }} kann die Story abschließen.</p>
-                {% endif %}
-
-                {% elif consensus_type == 'near_consensus' %}
-                <div class="consensus">
-                    <h4>✅ KONSENS ERREICHT!</h4>
-                    <p style="font-size: 2rem; margin: 0.5rem 0;">{{ suggested_points }}</p>
-                    <p style="font-size: 0.9rem;">Fast alle haben die gleiche Zahl (nur einer weicht um 1 ab).</p>
                 </div>
                 {% if user.name == story.creator_name %}
                 <form method="POST" action="/complete_story">
@@ -307,13 +296,6 @@
                 {% endfor %}
             </div>
             {% endif %}
-
-            <!-- Reset Button -->
-            {% if pending_stories or story_history %}
-            <form method="POST" action="/reset" style="margin-top: 1rem;">
-                <button type="submit" class="secondary" style="width: auto; font-size: 0.85rem; padding: 0.4rem 0.8rem;">Alle Stories zurücksetzen</button>
-            </form>
-            {% endif %}
         </div>
     </div>
 
@@ -364,6 +346,23 @@
             </div>
         </div>
     </div>
+
+    <!-- Card Selection Script -->
+    <script>
+        // Mark selected card on click
+        document.addEventListener('DOMContentLoaded', function() {
+            const voteCards = document.querySelectorAll('.vote-card');
+
+            voteCards.forEach(card => {
+                card.addEventListener('click', function(e) {
+                    // Remove selection from all cards
+                    voteCards.forEach(c => c.classList.remove('selected'));
+                    // Add selection to clicked card
+                    this.classList.add('selected');
+                });
+            });
+        });
+    </script>
 
 </body>
 </html>

@@ -51,47 +51,27 @@ def calculate_alternative_value(
 
 def check_consensus(vote_values: List[int]) -> Tuple[str, Optional[int], Optional[int]]:
     """
-    Prüft Konsens und gibt zurück: ("consensus"|"near_consensus"|"divergence", suggested_points, alternative_points)
+    Prüft Konsens und gibt zurück: ("consensus"|"divergence", suggested_points, alternative_points)
 
     Args:
         vote_values: Liste von abgegebenen Punkten
 
     Returns:
         Tuple aus (consensus_type, suggested_points, alternative_points)
-        - consensus: Alle stimmen überein
-        - near_consensus: Nur einer weicht um eine Fibonacci-Zahl ab
-        - divergence: Keine Einigkeit, höchster Wert + Alternative wird vorgeschlagen
+        - consensus: ALLE stimmen exakt überein (neue Runde nicht möglich)
+        - divergence: Mindestens eine Stimme weicht ab (neue Runde möglich)
     """
     if not vote_values or len(vote_values) < 1:
         return "divergence", None, None
 
     unique_values = set(vote_values)
 
-    # Fall 1: Alle gleich
+    # Fall 1: Perfekter Konsens - ALLE Karten gleich
     if len(unique_values) == 1:
         return "consensus", list(unique_values)[0], None
 
-    # Fall 2: Fast-Konsens (nur einer weicht ab, um max 1 Fibonacci-Zahl)
-    if len(vote_values) >= 2:
-        counter = Counter(vote_values)
-        most_common_value, most_common_count = counter.most_common(1)[0]
-
-        # Prüfen ob nur einer abweicht
-        if most_common_count == len(vote_values) - 1:
-            # Finde den abweichenden Wert
-            for value in unique_values:
-                if value != most_common_value:
-                    outlier = value
-                    # Prüfe ob nur eine Fibonacci-Zahl daneben
-                    try:
-                        idx_majority = FIBONACCI.index(most_common_value)
-                        idx_outlier = FIBONACCI.index(outlier)
-                        if abs(idx_majority - idx_outlier) == 1:
-                            return "near_consensus", most_common_value, None
-                    except ValueError:
-                        pass
-
-    # Fall 3: Divergenz - höchster Wert + Alternative
+    # Fall 2: Divergenz - mindestens eine Karte unterschiedlich
+    # Höchster Wert + Alternative vorschlagen
     highest_value = max(vote_values)
     alternative_value = calculate_alternative_value(vote_values, highest_value)
     return "divergence", highest_value, alternative_value

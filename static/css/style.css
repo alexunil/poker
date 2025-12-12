@@ -57,6 +57,22 @@ body {
     border-radius: 5px;
     background: var(--primary-focus);
     font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+}
+
+.team-member-name {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0;
+    white-space: nowrap;
+}
+
+.team-member-status {
+    margin-left: auto;
 }
 
 /* Event-Log */
@@ -320,6 +336,14 @@ details.story-form-collapsible[open] summary {
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
 
+.poker-card.selected {
+    background: var(--primary);
+    color: white;
+    border: 4px solid var(--primary);
+    box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.3);
+    transform: translateY(-5px) scale(1.05);
+}
+
 .poker-card.back {
     background: var(--card-back-color);
     color: white;
@@ -346,6 +370,7 @@ details.story-form-collapsible[open] summary {
 .voted-card-name {
     font-size: 0.85rem;
     margin-top: 0.3rem;
+    text-align: center;
 }
 
 /* Consensus Display */
@@ -595,6 +620,27 @@ details.story-form-collapsible[open] summary {
 .btn-ai-reasoning:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 10px rgba(102, 126, 234, 0.4);
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+}
+
+/* AI Reasoning Button Inline (in Team-Liste) */
+.btn-ai-reasoning-inline {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    margin-left: 0.5rem;
+    transition: all 0.2s;
+    box-shadow: 0 1px 3px rgba(102, 126, 234, 0.3);
+    vertical-align: middle;
+}
+
+.btn-ai-reasoning-inline:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(102, 126, 234, 0.4);
     background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
 }
 

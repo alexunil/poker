@@ -1,5 +1,8 @@
 const socket = io();
 
+// Global flag to prevent reloads while unicorn is showing
+let unicornIsActive = false;
+
 // Weise Einhorn-Sprüche
 const unicornQuotes = [
     "Die Weisheit der Schätzung offenbart sich...",
@@ -25,29 +28,34 @@ const unicornQuotes = [
 ];
 
 function closeUnicorn() {
-    console.log('👋 Einhorn wird manuell geschlossen...');
+    console.log('👋 Einhorn wird geschlossen...');
     const overlay = document.getElementById('unicornOverlay');
     overlay.classList.remove('show');
+    unicornIsActive = false;
 
     // Seite nach Animation neu laden
     setTimeout(() => location.reload(), 300);
 }
 
-function showUnicorn() {
+function showUnicorn(quoteFromServer) {
     console.log('🦄 EINHORN WIRD ANGEZEIGT!');
+    unicornIsActive = true; // Set flag IMMEDIATELY to prevent race conditions
+
     const overlay = document.getElementById('unicornOverlay');
     const speech = document.getElementById('unicornSpeech');
 
     if (!overlay) {
         console.log('⚠️ Einhorn ist deaktiviert oder Overlay nicht gefunden');
+        unicornIsActive = false;
         location.reload();
         return;
     }
 
-    // Zufälliger Spruch
-    const randomQuote = unicornQuotes[Math.floor(Math.random() * unicornQuotes.length)];
-    console.log('💬 Einhorn sagt:', randomQuote);
-    speech.textContent = randomQuote;
+    // Verwende Spruch vom Server (damit alle denselben sehen)
+    // Falls Server keinen Spruch sendet, verwende Fallback aus lokalem Array
+    const quote = quoteFromServer || unicornQuotes[Math.floor(Math.random() * unicornQuotes.length)];
+    console.log('💬 Einhorn sagt:', quote);
+    speech.textContent = quote;
 
     // Einhorn anzeigen
     overlay.classList.add('show');
@@ -100,12 +108,19 @@ socket.on('vote_submitted', () => {
 });
 socket.on('cards_revealed', (data) => {
     console.log('🔓 Event: cards_revealed', data);
-    // Einhorn nur zeigen wenn aktiviert
+    // Einhorn nur zeigen wenn Server würfelt dass es erscheinen soll
     const enableUnicorn = document.body.dataset.enableUnicorn === 'true';
-    if (enableUnicorn) {
-        showUnicorn(); // 🦄 Einhorn beim Aufdecken!
+    const shouldShow = data.show_unicorn === true;
+
+    if (enableUnicorn && shouldShow) {
+        console.log('🎲 Einhorn-Würfel: JA! Einhorn erscheint!');
+        showUnicorn(data.unicorn_quote); // 🦄 Einhorn mit Server-Spruch!
     } else {
-        console.log('⚠️ Einhorn ist deaktiviert, reloade direkt');
+        if (enableUnicorn && !shouldShow) {
+            console.log('🎲 Einhorn-Würfel: NEIN. Kein Einhorn dieses Mal.');
+        } else {
+            console.log('⚠️ Einhorn ist deaktiviert, reloade direkt');
+        }
         location.reload();
     }
 });
@@ -123,10 +138,9 @@ socket.on('story_reset', () => {
 });
 socket.on('event_added', () => {
     console.log('📢 Event: event_added');
-    // Nicht reloaden wenn Einhorn gerade angezeigt wird
-    const overlay = document.getElementById('unicornOverlay');
-    if (overlay && overlay.classList.contains('show')) {
-        console.log('⏸️ Reload unterdrückt - Einhorn ist sichtbar');
+    // Nicht reloaden wenn Einhorn gerade angezeigt wird (Flag-basiert)
+    if (unicornIsActive) {
+        console.log('⏸️ Reload unterdrückt - Einhorn ist aktiv');
         return;
     }
     location.reload();

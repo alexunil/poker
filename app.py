@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from functools import wraps
 import secrets
 import os
+import random
 import markdown
 from datetime import datetime, timedelta
 
@@ -47,7 +48,63 @@ ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH")
 # Feature Configuration
 ENABLE_UNICORN = os.getenv("ENABLE_UNICORN", "false").lower() == "true"
 UNICORN_DISPLAY_SECONDS = int(os.getenv("UNICORN_DISPLAY_SECONDS", "3"))
+UNICORN_FREQUENCY = int(os.getenv("UNICORN_FREQUENCY", "2"))  # 0-10: Wie oft pro 10 Reveals erscheint das Einhorn
 ENABLE_SPECTATOR_MODE = os.getenv("ENABLE_SPECTATOR_MODE", "true").lower() == "true"
+ENABLE_AI_ASSISTANT = os.getenv("ENABLE_AI_ASSISTANT", "true").lower() == "true"
+
+# Einhorn-Sprüche (werden vom Server ausgewählt, damit alle dasselbe sehen)
+UNICORN_QUOTES = [
+    "Die Weisheit der Schätzung offenbart sich...",
+    "Das Einhorn hat gesprochen!",
+    "Möge die Fibonacci-Kraft mit euch sein!",
+    "Konsens ist der Weg zur Erleuchtung.",
+    "Story Points sind wie Magie - manchmal unerwartet!",
+    "Ein weises Team schätzt gemeinsam.",
+    "Die Karten lügen nie... oder doch?",
+    "Perfektion ist keine Fibonacci-Zahl.",
+    "Schätzen ist eine Kunst, keine Wissenschaft!",
+    "Das Einhorn nickt weise...",
+    "Agile Weisheit kommt von Innen... oder vom Einhorn.",
+    "13 Story Points? Das Einhorn ist beeindruckt!",
+    "Manchmal ist 5 größer als 8 - im Herzen.",
+    "Story Points sind keine Stunden - merkt euch das!",
+    "Das Einhorn sieht Potenzial in eurer Schätzung.",
+    "Velocity ist wichtig, aber Qualität ist wichtiger.",
+    "In der Ruhe liegt die Kraft der guten Schätzung.",
+    "Fibonacci würde stolz auf euch sein!",
+    "Konsens bedeutet nicht, dass alle Recht haben.",
+    "Das Einhorn segnet diese Abstimmung!"
+]
+
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+def should_show_unicorn():
+    """
+    Würfelt ob das Einhorn erscheinen soll basierend auf UNICORN_FREQUENCY.
+
+    Returns:
+        bool: True wenn Einhorn erscheinen soll, False sonst
+
+    Beispiel:
+        UNICORN_FREQUENCY=2 -> 2 von 10 Fällen (20% Wahrscheinlichkeit)
+        UNICORN_FREQUENCY=10 -> Immer
+        UNICORN_FREQUENCY=0 -> Nie
+    """
+    if not ENABLE_UNICORN:
+        return False
+
+    if UNICORN_FREQUENCY <= 0:
+        return False
+
+    if UNICORN_FREQUENCY >= 10:
+        return True
+
+    # Würfeln: Zahl zwischen 1-10, erscheint wenn <= UNICORN_FREQUENCY
+    roll = random.randint(1, 10)
+    return roll <= UNICORN_FREQUENCY
 
 
 # ============================================================================
@@ -56,6 +113,10 @@ ENABLE_SPECTATOR_MODE = os.getenv("ENABLE_SPECTATOR_MODE", "true").lower() == "t
 
 def initialize_ai_user():
     """Initialisiert AI-User beim App-Start"""
+    if not ENABLE_AI_ASSISTANT:
+        print("ℹ️  AI Assistant disabled via ENABLE_AI_ASSISTANT=false")
+        return
+
     if not AI_AVAILABLE:
         print("⚠️  AI module not available - AI Assistant will not participate")
         db.create_event(
@@ -130,6 +191,13 @@ def admin_required(f):
 # ============================================================================
 
 
+def truncate_title(title: str, max_length: int = 40) -> str:
+    """Kürzt Story-Titel auf max_length Zeichen und fügt Anführungszeichen hinzu"""
+    if len(title) > max_length:
+        return f'"{title[:max_length]}..."'
+    return f'"{title}"'
+
+
 def add_event(message, event_type="info"):
     """Fügt ein Event zum Log hinzu"""
     # Event in Datenbank speichern
@@ -151,6 +219,9 @@ def trigger_ai_estimation(story_id):
     Args:
         story_id: Story ID
     """
+    if not ENABLE_AI_ASSISTANT:
+        return
+
     if not AI_AVAILABLE:
         print(f"⚠️  AI not available - skipping estimation for story {story_id}")
         return
@@ -177,9 +248,15 @@ def _estimate_in_background(story_id):
     print(f"🤖 AI background task started for story {story_id}")
 
     try:
-        # Kurze Verzögerung damit andere Teilnehmer zuerst abstimmen können
-        print(f"🤖 Waiting 2 seconds before estimating...")
-        time.sleep(2)
+        # Event: AI wird befragt
+        add_event(
+            "🤖 AI Assistant wird befragt...",
+            "ai_estimating"
+        )
+        socketio.emit("ai_status_update", {
+            'status': 'estimating',
+            'story_id': story_id
+        })
 
         print(f"🤖 Calling estimate_story_with_ai({story_id})...")
         # AI-Schätzung durchführen
@@ -187,9 +264,19 @@ def _estimate_in_background(story_id):
 
         if not result:
             print(f"⚠️  AI estimation returned no result for story {story_id}")
+            add_event(
+                "⚠️ AI Assistant konnte keine Schätzung abgeben",
+                "ai_error"
+            )
             return
 
         print(f"🤖 AI estimation result: {result.get('points')} SP")
+
+        # Event: AI hat erfolgreich geschätzt
+        add_event(
+            "✅ AI Assistant wurde erfolgreich befragt",
+            "ai_estimated"
+        )
 
         # Aktuelle Runde ermitteln
         story = db.get_story_by_id(story_id)
@@ -260,6 +347,12 @@ def _estimate_in_background(story_id):
         import traceback
         traceback.print_exc()
 
+        # Event bei Fehler
+        add_event(
+            f"❌ AI Assistant Fehler: {str(e)[:100]}",
+            "ai_error"
+        )
+
 
 @app.route("/")
 def index():
@@ -307,6 +400,13 @@ def index():
     # Event Log aus Datenbank laden
     event_log = db.get_recent_events(limit=10)
 
+    # Aktuellen Vote des Users ermitteln (für Karten-Markierung)
+    current_user_vote = None
+    if active_story and active_story["status"] == "voting":
+        votes_dict = get_story_votes(active_story["id"], active_story["round"])
+        if user["name"] in votes_dict:
+            current_user_vote = votes_dict[user["name"]]["points"]
+
     # Hauptseite
     return render_template(
         "index.html",
@@ -328,6 +428,7 @@ def index():
         has_active_voting=active_story is not None,
         enable_unicorn=ENABLE_UNICORN,
         unicorn_display_seconds=UNICORN_DISPLAY_SECONDS,
+        current_user_vote=current_user_vote,
         enable_spectator_mode=ENABLE_SPECTATOR_MODE,
         ai_available=AI_AVAILABLE and is_ai_enabled() if AI_AVAILABLE else False,
         ai_user_name=get_ai_user_name() if (AI_AVAILABLE and is_ai_enabled()) else None,
@@ -362,14 +463,14 @@ def create_story():
             title, description, user["name"], auto_start=auto_start
         )
 
-        add_event(f"📝 {user['name']} hat Story erstellt: {title}", "story_created")
+        add_event(f"📝 {user['name']} hat Story erstellt: {truncate_title(title)}", "story_created")
 
         # Wenn sofort starten gewünscht UND keine aktive Story
         if start_immediately:
             active_story = get_active_story()
             if active_story is None:
                 db.start_voting(story_id)
-                add_event(f"🎯 Abstimmung für '{title}' gestartet", "voting_started")
+                add_event(f"🎯 Abstimmung für {truncate_title(title)} gestartet", "voting_started")
 
                 # WebSocket: Voting gestartet
                 socketio.emit("voting_started", {"reload": True})
@@ -463,6 +564,9 @@ def vote():
                     {"name": name, "points": v["points"]}
                     for name, v in story_votes.items()
                 ]
+                # Würfeln ob Einhorn erscheint und Spruch auswählen
+                show_unicorn = should_show_unicorn()
+                unicorn_quote = random.choice(UNICORN_QUOTES) if show_unicorn else None
                 socketio.emit(
                     "cards_revealed",
                     {
@@ -470,6 +574,8 @@ def vote():
                         "consensus_type": consensus_type,
                         "suggested_points": suggested_points,
                         "alternative_points": alternative_points,
+                        "show_unicorn": show_unicorn,
+                        "unicorn_quote": unicorn_quote,
                     },
                 )
             else:
@@ -516,6 +622,9 @@ def reveal():
     vote_list = [
         {"name": name, "points": v["points"]} for name, v in story_votes.items()
     ]
+    # Würfeln ob Einhorn erscheint und Spruch auswählen
+    show_unicorn = should_show_unicorn()
+    unicorn_quote = random.choice(UNICORN_QUOTES) if show_unicorn else None
     socketio.emit(
         "cards_revealed",
         {
@@ -523,6 +632,8 @@ def reveal():
             "consensus_type": consensus_type,
             "suggested_points": suggested_points,
             "alternative_points": alternative_points,
+            "show_unicorn": show_unicorn,
+            "unicorn_quote": unicorn_quote,
         },
     )
 
@@ -685,14 +796,6 @@ def toggle_spectator():
         # WebSocket: Update alle Clients
         socketio.emit("user_updated", {"reload": True})
 
-    return redirect(url_for("index"))
-
-
-@app.route("/reset", methods=["POST"])
-def reset():
-    """DEPRECATED: Reset wird durch Admin-Dashboard ersetzt"""
-    # Diese Route wird beibehalten, tut aber nichts mehr
-    # In Zukunft: Redirect zu Admin-Dashboard oder komplett entfernen
     return redirect(url_for("index"))
 
 
@@ -943,6 +1046,9 @@ def get_ai_status():
     Returns:
         JSON mit is_available
     """
+    if not ENABLE_AI_ASSISTANT:
+        return jsonify({'is_available': False, 'reason': 'AI Assistant disabled via config'})
+
     if not AI_AVAILABLE:
         return jsonify({'is_available': False, 'reason': 'AI module not loaded'})
 
@@ -1118,6 +1224,114 @@ def import_archive_stories_csv():
 
     except Exception as e:
         return jsonify({"error": f"Fehler beim Verarbeiten der CSV: {str(e)}"}), 500
+
+
+@app.route("/admin/embedding-status", methods=["GET"])
+@admin_required
+def get_embedding_status():
+    """Gibt Status über Stories ohne Embeddings zurück"""
+    try:
+        stats = db.get_stories_without_embeddings()
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/admin/generate-embeddings", methods=["POST"])
+@admin_required
+def generate_missing_embeddings():
+    """Generiert Embeddings für alle Stories ohne Embeddings"""
+    try:
+        # Check if AI dependencies are available
+        if not AI_AVAILABLE:
+            return jsonify({
+                "error": "KI-Module sind nicht verfügbar. Bitte AI-Dependencies installieren."
+            }), 400
+
+        # Import AI dependencies
+        from ai.database_ai import init_ai_db, create_chunk, get_chunks_by_source
+        from ai.preprocessing import get_preprocessor
+        from ai.chunking import chunk_story
+        from ai.embeddings import create_generator
+        import ai.database_ai as db_ai
+
+        # Init AI DB
+        init_ai_db()
+
+        # Get provider from request or use default
+        provider = request.json.get("provider", "sentence_transformers") if request.is_json else "sentence_transformers"
+        strategy = request.json.get("strategy", "story") if request.is_json else "story"
+
+        # Setup
+        preprocessor = get_preprocessor()
+        generator = create_generator(provider)
+
+        # Get stories without embeddings
+        stats = db.get_stories_without_embeddings()
+        stories_to_process = stats["missing_stories"]
+
+        if not stories_to_process:
+            return jsonify({
+                "success": True,
+                "message": "Keine Stories zum Verarbeiten gefunden",
+                "processed": 0,
+                "errors": []
+            })
+
+        processed_count = 0
+        error_count = 0
+        errors = []
+
+        for story_info in stories_to_process:
+            try:
+                # Load full story
+                story = db.get_story_by_id(story_info["id"])
+                if not story:
+                    continue
+
+                # Check if already processed (race condition check)
+                existing = get_chunks_by_source('story', story['id'])
+                if existing:
+                    continue
+
+                # Preprocessing
+                cleaned = preprocessor.preprocess_story(story, include_votes=True)
+
+                # Chunking
+                chunks = chunk_story(cleaned['combined_text'])
+
+                # Create chunks and embeddings
+                for chunk in chunks:
+                    chunk_id = create_chunk(
+                        source_type='story',
+                        source_id=story['id'],
+                        chunk_text=chunk['text'],
+                        chunk_index=chunk['index'],
+                        chunk_strategy=strategy
+                    )
+
+                    generator.generate_and_store(
+                        chunk_id=chunk_id,
+                        text=chunk['text'],
+                        db_module=db_ai
+                    )
+
+                processed_count += 1
+
+            except Exception as e:
+                error_count += 1
+                errors.append(f"Story {story_info['id']}: {str(e)}")
+                continue
+
+        return jsonify({
+            "success": True,
+            "processed": processed_count,
+            "errors": error_count,
+            "error_messages": errors[:10]  # Limit to first 10 errors
+        })
+
+    except Exception as e:
+        return jsonify({"error": f"Fehler beim Generieren der Embeddings: {str(e)}"}), 500
 
 
 def generate_stories_markdown(stories):
