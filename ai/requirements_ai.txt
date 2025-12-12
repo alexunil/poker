@@ -1,0 +1,14 @@
+# AI Module Dependencies
+# Optional - nur installieren wenn AI-Features genutzt werden
+
+# Lokale Embeddings (Open Source, empfohlen)
+# Installiere mit: pip install sentence-transformers
+sentence-transformers>=2.2.0
+
+# Alternative: Wenn nur torch benötigt wird
+# torch>=2.0.0
+# numpy>=1.24.0
+
+# Hinweis: OpenAI und Ollama benötigen keine zusätzlichen Dependencies
+# - OpenAI: Nutzt nur urllib (stdlib)
+# - Ollama: Nutzt nur urllib (stdlib)

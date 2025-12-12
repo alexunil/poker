@@ -57,3 +57,16 @@ CLAUDE.md
 
 # Claude Code Directory
 .claude/
+
+# Organization-specific Files (not for public repo)
+import_jira_stories.py
+import_jira_stories_robust.py
+analyze_jira_export.py
+export_archive_stories.py
+JIRA_IMPORT.md
+IMPORT_SUMMARY.md
+ARCHIVE_IMPORT_SUCCESS.md
+CHANGELOG_2024-12-12.md
+import/entities.xml
+import/activeobjects.xml
+import/archive_stories.csv

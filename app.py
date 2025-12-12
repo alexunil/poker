@@ -18,6 +18,19 @@ import database as db
 from utils import get_current_user, get_active_story, get_pending_stories, get_story_votes
 from voting_logic import FIBONACCI, find_majority_value, check_consensus
 
+# AI imports (optional - graceful degradation if not available)
+try:
+    from ai.estimation import (
+        is_ai_enabled,
+        estimate_story_with_ai,
+        get_ai_user_name,
+        is_ai_user
+    )
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
+    print("⚠️  AI module not available - continuing without AI features")
+
 # Load environment variables
 load_dotenv()
 
@@ -35,6 +48,59 @@ ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH")
 ENABLE_UNICORN = os.getenv("ENABLE_UNICORN", "false").lower() == "true"
 UNICORN_DISPLAY_SECONDS = int(os.getenv("UNICORN_DISPLAY_SECONDS", "3"))
 ENABLE_SPECTATOR_MODE = os.getenv("ENABLE_SPECTATOR_MODE", "true").lower() == "true"
+
+
+# ============================================================================
+# INITIALIZATION
+# ============================================================================
+
+def initialize_ai_user():
+    """Initialisiert AI-User beim App-Start"""
+    if not AI_AVAILABLE:
+        print("⚠️  AI module not available - AI Assistant will not participate")
+        db.create_event(
+            "⚠️ AI Assistant nicht verfügbar (Modul nicht geladen)",
+            "ai_unavailable"
+        )
+        return
+
+    # Prüfe AI-Verfügbarkeit
+    from ai.estimation import check_ai_availability
+    available, error = check_ai_availability()
+
+    if not available:
+        print(f"⚠️  AI not enabled: {error}")
+        db.create_event(
+            f"⚠️ AI Assistant nicht verfügbar ({error})",
+            "ai_unavailable"
+        )
+        return
+
+    try:
+        # AI User erstellen/aktualisieren
+        ai_user_name = get_ai_user_name()
+        ai_user = db.get_user_by_name(ai_user_name)
+
+        if not ai_user:
+            # Erstelle AI User mit fixer Session ID
+            db.create_user(ai_user_name, session_id="ai_assistant_session")
+            print(f"✅ AI Assistant initialized: {ai_user_name}")
+
+            # Event hinzufügen
+            db.create_event(
+                f"🤖 AI Assistant ist dem Team beigetreten",
+                "ai_joined"
+            )
+        else:
+            # Update last_seen
+            db.update_user_last_seen("ai_assistant_session")
+            print(f"✅ AI Assistant active: {ai_user_name}")
+    except Exception as e:
+        print(f"⚠️  Could not initialize AI user: {e}")
+        db.create_event(
+            f"⚠️ AI Assistant Fehler: {str(e)}",
+            "ai_error"
+        )
 
 
 # ============================================================================
@@ -73,6 +139,128 @@ def add_event(message, event_type="info"):
     socketio.emit("event_added", {"message": message, "type": event_type})
 
 
+# ============================================================================
+# AI ESTIMATION HELPERS
+# ============================================================================
+
+
+def trigger_ai_estimation(story_id):
+    """
+    Triggert AI-Schätzung für eine Story im Hintergrund
+
+    Args:
+        story_id: Story ID
+    """
+    if not AI_AVAILABLE:
+        print(f"⚠️  AI not available - skipping estimation for story {story_id}")
+        return
+
+    if not is_ai_enabled():
+        print(f"⚠️  AI not enabled - skipping estimation for story {story_id}")
+        return
+
+    print(f"🤖 Triggering AI estimation for story {story_id}...")
+    # Background Task starten
+    socketio.start_background_task(_estimate_in_background, story_id)
+
+
+def _estimate_in_background(story_id):
+    """
+    Background Task: AI-Schätzung durchführen und Vote abgeben
+
+    Args:
+        story_id: Story ID
+    """
+    import json
+    import time
+
+    print(f"🤖 AI background task started for story {story_id}")
+
+    try:
+        # Kurze Verzögerung damit andere Teilnehmer zuerst abstimmen können
+        print(f"🤖 Waiting 2 seconds before estimating...")
+        time.sleep(2)
+
+        print(f"🤖 Calling estimate_story_with_ai({story_id})...")
+        # AI-Schätzung durchführen
+        result = estimate_story_with_ai(story_id)
+
+        if not result:
+            print(f"⚠️  AI estimation returned no result for story {story_id}")
+            return
+
+        print(f"🤖 AI estimation result: {result.get('points')} SP")
+
+        # Aktuelle Runde ermitteln
+        story = db.get_story_by_id(story_id)
+        if not story or story['status'] != 'voting':
+            print(f"⚠️  Story {story_id} not in voting state")
+            return
+
+        current_round = story.get('round', 1)
+
+        # Vote abgeben als AI User
+        ai_user_name = get_ai_user_name()
+
+        # Prüfe ob AI User existiert, wenn nicht erstelle ihn
+        ai_user = db.get_user_by_name(ai_user_name)
+        if not ai_user:
+            db.create_user(ai_user_name, session_id="ai_assistant_session")
+
+        # Vote abgeben
+        success = db.cast_vote(
+            story_id=story_id,
+            user_name=ai_user_name,
+            points=result['points'],
+            round_num=current_round
+        )
+
+        if not success:
+            print(f"❌ Failed to cast AI vote for story {story_id}")
+            return
+
+        print(f"✅ AI vote cast successfully: {result['points']} SP")
+
+        # Begründung speichern
+        similar_stories_json = json.dumps([
+            {
+                'title': s['story']['title'],
+                'points': s['story']['final_points'],
+                'similarity': s['similarity']
+            }
+            for s in result['similar_stories']
+        ])
+
+        db.save_ai_estimation(
+            story_id=story_id,
+            vote_id=None,  # vote_id ist optional
+            reasoning=result['reasoning'],
+            similar_stories=similar_stories_json,
+            model_used=result['model_used']
+        )
+        print(f"✅ AI reasoning saved for story {story_id}")
+
+        # Event hinzufügen (ohne Points zu spoilern!)
+        add_event(
+            "🤖 AI Assistant hat eine Karte gelegt",
+            "ai_vote"
+        )
+
+        # WebSocket: Alle benachrichtigen
+        socketio.emit("vote_submitted", {
+            'user': ai_user_name,
+            'is_ai': True,
+            'reload': True
+        })
+
+        print(f"✅ AI estimation completed: {result['points']} SP for story {story_id}")
+
+    except Exception as e:
+        print(f"❌ AI estimation failed for story {story_id}: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 @app.route("/")
 def index():
     user = get_current_user()
@@ -109,7 +297,9 @@ def index():
 
     # Alle Users holen für Anzeige
     all_users = db.get_all_users()
-    users_dict = {u["session_id"]: u for u in all_users}
+    users_dict = {u["session_id"]: u for u in all_users if u["session_id"]}
+
+    # AI User sollte schon in all_users sein (mit session_id="ai_assistant_session")
 
     # Anzahl aktiver (nicht-Zuschauer) Users
     active_users_count = db.get_active_users_count()
@@ -139,6 +329,8 @@ def index():
         enable_unicorn=ENABLE_UNICORN,
         unicorn_display_seconds=UNICORN_DISPLAY_SECONDS,
         enable_spectator_mode=ENABLE_SPECTATOR_MODE,
+        ai_available=AI_AVAILABLE and is_ai_enabled() if AI_AVAILABLE else False,
+        ai_user_name=get_ai_user_name() if (AI_AVAILABLE and is_ai_enabled()) else None,
     )
 
 
@@ -218,6 +410,9 @@ def start_voting(story_id):
 
     # WebSocket: Benachrichtige alle
     socketio.emit("voting_started", {"reload": True})
+
+    # AI-Schätzung triggern (im Hintergrund)
+    trigger_ai_estimation(story_id)
 
     return redirect(url_for("index"))
 
@@ -404,6 +599,76 @@ def new_round():
     socketio.emit("new_round", {"round": new_round_num})
 
     return redirect(url_for("index"))
+
+
+@app.route("/withdraw_story/<int:story_id>", methods=["POST"])
+def withdraw_story_route(story_id):
+    """Stellt eine aktive Story zurück in die Queue"""
+    user = get_current_user()
+    if not user:
+        return redirect(url_for("index"))
+
+    # Hole Story-Daten
+    active_story = get_active_story()
+    if not active_story or active_story["id"] != story_id:
+        return redirect(url_for("index"))
+
+    # Nur der Ersteller darf die Story zurückstellen
+    if active_story["creator_name"] != user["name"]:
+        return redirect(url_for("index"))
+
+    # Story zurückstellen
+    if db.withdraw_story(story_id):
+        add_event(
+            f"↩️ Story '{active_story['title']}' zurückgestellt",
+            "story_withdrawn"
+        )
+
+        # WebSocket: Benachrichtige alle Clients
+        socketio.emit("story_withdrawn", {
+            "story_id": story_id,
+            "title": active_story["title"]
+        })
+
+    return redirect(url_for("index"))
+
+
+@app.route("/delete_story/<int:story_id>", methods=["POST"])
+def delete_story_route(story_id):
+    """Löscht eine Story permanent aus der Queue"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    # Hole Story-Daten
+    story = db.get_story_by_id(story_id)
+    if not story:
+        return jsonify({"success": False, "error": "Story not found"}), 404
+
+    # Nur der Ersteller darf die Story löschen
+    if story["creator_name"] != user["name"]:
+        return jsonify({"success": False, "error": "Unauthorized"}), 403
+
+    # Sicherheitscheck: Nur pending Stories löschen
+    if story["status"] != "pending":
+        return jsonify({"success": False, "error": "Only pending stories can be deleted"}), 400
+
+    # Story löschen
+    if db.delete_story(story_id):
+        add_event(
+            f"🗑️ Story '{story['title']}' gelöscht",
+            "story_deleted"
+        )
+
+        # WebSocket: Benachrichtige alle Clients
+        socketio.emit("story_deleted", {
+            "story_id": story_id,
+            "title": story["title"]
+        })
+
+        return jsonify({"success": True})
+    else:
+        return jsonify({"success": False, "error": "Delete failed"}), 500
 
 
 @app.route("/toggle_spectator", methods=["POST"])
@@ -628,6 +893,67 @@ def handle_request_update():
 
 
 # ============================================================================
+# AI API ROUTES
+# ============================================================================
+
+
+@app.route("/api/ai-reasoning/<int:story_id>")
+def get_ai_reasoning(story_id):
+    """
+    API: Gibt die AI-Begründung für eine Story zurück
+
+    Args:
+        story_id: Story ID
+
+    Returns:
+        JSON mit reasoning und similar_stories
+    """
+    import json
+
+    if not AI_AVAILABLE:
+        return jsonify({'error': 'AI not available'}), 503
+
+    # Hole AI-Estimation
+    estimation = db.get_ai_estimation_by_story(story_id)
+
+    if not estimation:
+        return jsonify({'error': 'No AI estimation found'}), 404
+
+    # Parse similar_stories JSON
+    similar_stories = []
+    if estimation.get('similar_stories'):
+        try:
+            similar_stories = json.loads(estimation['similar_stories'])
+        except:
+            pass
+
+    return jsonify({
+        'reasoning': estimation['reasoning'],
+        'similar_stories': similar_stories,
+        'model_used': estimation['model_used'],
+        'created_at': estimation['created_at']
+    })
+
+
+@app.route("/api/ai-status")
+def get_ai_status():
+    """
+    API: Gibt AI-Verfügbarkeits-Status zurück
+
+    Returns:
+        JSON mit is_available
+    """
+    if not AI_AVAILABLE:
+        return jsonify({'is_available': False, 'reason': 'AI module not loaded'})
+
+    is_available = is_ai_enabled()
+    return jsonify({
+        'is_available': is_available,
+        'ai_user_name': get_ai_user_name() if is_available else None
+    })
+
+
+# ============================================================================
 # ADMIN ROUTES
 # ============================================================================
 
@@ -707,6 +1033,91 @@ def export_stories_markdown():
     ] = f"attachment; filename=planning_poker_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
 
     return response
+
+
+@app.route("/admin/import/archive-stories", methods=["POST"])
+@admin_required
+def import_archive_stories_csv():
+    """Importiert Archive-Stories aus CSV-Datei"""
+    import csv
+    from io import StringIO
+    from flask import flash, make_response
+
+    # Check if file was uploaded
+    if 'csv_file' not in request.files:
+        return jsonify({"error": "Keine Datei hochgeladen"}), 400
+
+    file = request.files['csv_file']
+
+    if file.filename == '':
+        return jsonify({"error": "Keine Datei ausgewählt"}), 400
+
+    if not file.filename.endswith('.csv'):
+        return jsonify({"error": "Nur CSV-Dateien erlaubt"}), 400
+
+    try:
+        # Read CSV content
+        content = file.read().decode('utf-8')
+        csv_reader = csv.DictReader(StringIO(content))
+
+        imported_count = 0
+        skipped_count = 0
+        errors = []
+
+        for row_num, row in enumerate(csv_reader, start=2):  # start=2 because row 1 is header
+            try:
+                title = row.get('title', '').strip()
+                description = row.get('description', '').strip()
+                jira_key = row.get('jira_key', '').strip()
+                story_points_str = row.get('story_points', '').strip()
+
+                # Validate required fields
+                if not title:
+                    errors.append(f"Zeile {row_num}: Titel fehlt")
+                    skipped_count += 1
+                    continue
+
+                # Parse story points (can be empty)
+                final_points = None
+                if story_points_str:
+                    try:
+                        final_points = int(story_points_str)
+                    except ValueError:
+                        errors.append(f"Zeile {row_num}: Ungültige Story Points '{story_points_str}'")
+                        skipped_count += 1
+                        continue
+
+                # Create archive story (using jira_archive source for compatibility)
+                db.create_story(
+                    title=title,
+                    description=description,
+                    creator_name="CSV Import",
+                    auto_start=False,
+                    source='jira_archive',
+                    jira_key=jira_key if jira_key else None,
+                    status='completed',
+                    final_points=final_points,
+                    completed_at=datetime.now()
+                )
+
+                imported_count += 1
+
+            except Exception as e:
+                errors.append(f"Zeile {row_num}: {str(e)}")
+                skipped_count += 1
+
+        # Build response message
+        result = {
+            "success": True,
+            "imported": imported_count,
+            "skipped": skipped_count,
+            "errors": errors[:10]  # Limit errors to first 10
+        }
+
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({"error": f"Fehler beim Verarbeiten der CSV: {str(e)}"}), 500
 
 
 def generate_stories_markdown(stories):
@@ -850,5 +1261,10 @@ if __name__ == "__main__":
     db_path = os.getenv("DB_PATH", "planning_poker.db")
     print(f"Initialisiere Datenbank: {db_path}")
     db.init_db(db_path)
+
+    # AI-User initialisieren
+    print("Initialisiere AI Assistant...")
+    initialize_ai_user()
+
     print("Starte Flask-App...")
     socketio.run(app, debug=True, host="0.0.0.0", port=5000, allow_unsafe_werkzeug=True)

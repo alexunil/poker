@@ -147,6 +147,34 @@
     </nav>
 
     <main class="main-content">
+        <!-- CSV Import Section -->
+        <section class="section">
+            <h2>📦 Archive Stories Importieren</h2>
+            <p>Importiere historische Stories aus einer CSV-Datei, um sie als Trainingsdaten für KI-Schätzungen zu nutzen.</p>
+
+            <details>
+                <summary>CSV-Format anzeigen</summary>
+                <p>Die CSV-Datei muss folgende Spalten enthalten:</p>
+                <pre><code>jira_key,title,description,story_points
+SEC-962,Story Titel,Beschreibung...,13
+VK-123,Weiterer Titel,Weitere Beschreibung...,5</code></pre>
+                <p><strong>Hinweise:</strong></p>
+                <ul>
+                    <li><code>jira_key</code> ist optional (kann leer sein)</li>
+                    <li><code>story_points</code> ist optional (kann leer sein)</li>
+                    <li><code>title</code> ist Pflicht</li>
+                    <li><code>description</code> wird empfohlen für bessere KI-Schätzungen</li>
+                </ul>
+            </details>
+
+            <form id="csv-upload-form" enctype="multipart/form-data" style="margin-top: 1rem;">
+                <input type="file" id="csv-file-input" name="csv_file" accept=".csv" required>
+                <button type="submit" id="import-btn">📥 CSV importieren</button>
+            </form>
+
+            <div id="import-result" style="margin-top: 1rem; display: none;"></div>
+        </section>
+
         <!-- Statistics -->
         <div class="stats-grid">
             <div class="stat-card">
@@ -306,5 +334,74 @@
             {% endif %}
         </section>
     </main>
+
+    <script>
+        // CSV Upload Handler
+        document.getElementById('csv-upload-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const fileInput = document.getElementById('csv-file-input');
+            const importBtn = document.getElementById('import-btn');
+            const resultDiv = document.getElementById('import-result');
+
+            if (!fileInput.files.length) {
+                alert('Bitte wähle eine CSV-Datei aus.');
+                return;
+            }
+
+            // Show loading state
+            importBtn.disabled = true;
+            importBtn.textContent = '⏳ Importiere...';
+            resultDiv.style.display = 'none';
+
+            try {
+                const formData = new FormData();
+                formData.append('csv_file', fileInput.files[0]);
+
+                const response = await fetch('/admin/import/archive-stories', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    resultDiv.innerHTML = `<article style="background: #ff4444; color: white;"><strong>❌ Fehler:</strong> ${result.error}</article>`;
+                } else {
+                    let message = `<article style="background: #4caf50; color: white;">
+                        <strong>✅ Import erfolgreich!</strong><br>
+                        Importiert: ${result.imported} Stories<br>
+                        Übersprungen: ${result.skipped} Stories
+                    </article>`;
+
+                    if (result.errors && result.errors.length > 0) {
+                        message += `<article style="background: #ff9800; color: white; margin-top: 0.5rem;">
+                            <strong>⚠️ Warnungen:</strong><br>
+                            ${result.errors.join('<br>')}
+                        </article>`;
+                    }
+
+                    resultDiv.innerHTML = message;
+
+                    // Reset form
+                    fileInput.value = '';
+
+                    // Reload page after 3 seconds to show updated stats
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 3000);
+                }
+
+                resultDiv.style.display = 'block';
+
+            } catch (error) {
+                resultDiv.innerHTML = `<article style="background: #ff4444; color: white;"><strong>❌ Fehler:</strong> ${error.message}</article>`;
+                resultDiv.style.display = 'block';
+            } finally {
+                importBtn.disabled = false;
+                importBtn.textContent = '📥 CSV importieren';
+            }
+        });
+    </script>
 </body>
 </html>

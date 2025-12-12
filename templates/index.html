@@ -47,6 +47,9 @@
             {% for session_id, u in users.items() %}
             <div class="team-member">
                 {{ u.name }}
+                {% if ai_available and u.name == ai_user_name %}
+                    <span class="ai-badge" style="float: none; margin-left: 0.3rem;">🤖 AI</span>
+                {% endif %}
                 {% if u.is_spectator %}
                     <span style="float: right; font-size: 0.8rem; opacity: 0.6;">👁️</span>
                 {% elif story and story.status == 'voting' %}
@@ -82,11 +85,14 @@
                     <div class="pending-story-item" title="{{ s.description if s.description else s.title }}">
                         <span style="flex: 1; overflow: hidden; text-overflow: ellipsis;">{{ s.title }}</span>
                         {% if s.creator_name == user.name %}
-                        <form method="POST" action="/start_voting/{{ s.id }}" style="margin: 0; flex-shrink: 0; margin-left: 0.5rem;">
-                            <button type="submit" {% if has_active_voting %}disabled{% endif %}>
-                                {% if has_active_voting %}⏳{% else %}▶{% endif %}
-                            </button>
-                        </form>
+                        <div style="display: flex; gap: 0.3rem; flex-shrink: 0;">
+                            <button class="btn-delete" onclick="deleteStory({{ s.id }}, '{{ s.title|replace("'", "\\'") }}')" title="Story löschen">🗑️</button>
+                            <form method="POST" action="/start_voting/{{ s.id }}" style="margin: 0;">
+                                <button type="submit" {% if has_active_voting %}disabled{% endif %}>
+                                    {% if has_active_voting %}⏳{% else %}▶{% endif %}
+                                </button>
+                            </form>
+                        </div>
                         {% endif %}
                     </div>
                     {% endfor %}
@@ -98,7 +104,14 @@
             <div class="game-table">
             {% if story %}
                 <!-- Aktive Story: Voting oder Revealed -->
-                <h3>🎯 {{ story.title }} <small>(Runde {{ story.round }})</small></h3>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                    <h3 style="margin: 0;">🎯 {{ story.title }} <small>(Runde {{ story.round }})</small></h3>
+                    {% if user.name == story.creator_name and story.status in ['voting', 'revealed'] %}
+                    <form method="POST" action="/withdraw_story/{{ story.id }}" style="margin: 0;">
+                        <button type="submit" class="btn-withdraw" title="Story zurückstellen">↩️</button>
+                    </form>
+                    {% endif %}
+                </div>
                 {% if story.description %}
                 <p style="margin: 0.5rem 0 1rem 0; font-size: 0.9rem;">{{ story.description }}</p>
                 {% endif %}
@@ -128,7 +141,12 @@
                     {% for name, vote_data in votes.items() %}
                     <div class="voted-card-wrapper">
                         <div class="poker-card back">🎴</div>
-                        <div class="voted-card-name">{{ name }}</div>
+                        <div class="voted-card-name">
+                            {{ name }}
+                            {% if ai_available and name == ai_user_name %}
+                            <span class="ai-badge">🤖 AI</span>
+                            {% endif %}
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
@@ -147,7 +165,17 @@
                     {% for name, vote_data in votes.items() %}
                     <div class="voted-card-wrapper">
                         <div class="poker-card revealed">{{ vote_data.points }}</div>
-                        <div class="voted-card-name">{{ name }}</div>
+                        <div class="voted-card-name">
+                            {{ name }}
+                            {% if ai_available and name == ai_user_name %}
+                            <span class="ai-badge">🤖 AI</span>
+                            {% endif %}
+                        </div>
+                        {% if ai_available and name == ai_user_name %}
+                        <button class="btn-ai-reasoning" onclick="showAiReasoning({{ story.id }})" title="AI-Begründung anzeigen">
+                            💭 Begründung
+                        </button>
+                        {% endif %}
                     </div>
                     {% endfor %}
                 </div>
@@ -323,5 +351,19 @@
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     {% endif %}
+
+    <!-- AI Reasoning Modal -->
+    <div id="ai-reasoning-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🤖 AI-Begründung</h3>
+                <button class="modal-close" onclick="closeAiReasoning()">&times;</button>
+            </div>
+            <div class="modal-body" id="ai-reasoning-content">
+                <div class="loading">Lade Begründung...</div>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>

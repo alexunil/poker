@@ -10,6 +10,7 @@ Eine moderne, Echtzeit-fähige Planning Poker Web-Anwendung für agile Scrum-Tea
 - **Multi-Round Support** - bei Divergenz kann erneut abgestimmt werden
 - **Konsens-Erkennung** - automatische Erkennung von perfektem und Fast-Konsens
 - **Story-Verwaltung** - Titel, Beschreibung, automatische Warteschlange
+- **🤖 AI Assistant** - Virtuelles Teammitglied mit automatischen Schätzungen (optional)
 
 ### Erweiterte Features
 - **Admin Dashboard** mit Übersicht aller Stories, Votes und Benutzer
@@ -20,10 +21,19 @@ Eine moderne, Echtzeit-fähige Planning Poker Web-Anwendung für agile Scrum-Tea
 - **Permanente Sessions** - keine Timeout, 10 Jahre Cookie-Gültigkeit
 - **Easter Egg** - optionales Einhorn beim Aufdecken der Karten 🦄
 
+### 🤖 AI Assistant (Optional)
+Der **AI Assistant** ist ein virtuelles Teammitglied, das automatisch bei jeder Story mitschätzt:
+- **Intelligente Schätzungen** mit Claude Opus 4.5
+- **Semantic Search** - findet ähnliche Stories aus dem Archiv
+- **Transparente Begründung** - alle können nach dem Reveal die AI-Begründung sehen
+- **Graceful Degradation** - App funktioniert auch ohne AI
+- **Visuell erkennbar** - 🤖 AI Badge im Team
+
 ### Konfigurierbar
 - Einhorn Easter Egg aktivieren/deaktivieren
 - Einhorn Anzeigedauer konfigurierbar
 - Zuschauer-Modus Feature ein-/ausblendbar
+- AI Assistant optional aktivierbar
 
 ## 🚀 Schnellstart
 
@@ -68,6 +78,9 @@ Eine moderne, Echtzeit-fähige Planning Poker Web-Anwendung für agile Scrum-Tea
    python generate_admin_password.py
    # Füge den Hash in .env ein
    ADMIN_PASSWORD_HASH=<generierter-hash>
+
+   # Optional: AI Assistant aktivieren
+   ANTHROPIC_API_KEY=sk-ant-...
    ```
 
 5. **Datenbank initialisieren**
@@ -84,6 +97,42 @@ Eine moderne, Echtzeit-fähige Planning Poker Web-Anwendung für agile Scrum-Tea
    ```
    http://localhost:5000
    ```
+
+### AI Assistant aktivieren (Optional)
+
+Der AI Assistant benötigt zusätzliche Abhängigkeiten und eine Claude API-Key:
+
+1. **AI-Dependencies installieren**
+   ```bash
+   venv/bin/pip install sentence-transformers anthropic
+   ```
+
+2. **API-Key setzen**
+   ```bash
+   # In .env hinzufügen:
+   ANTHROPIC_API_KEY=sk-ant-...
+   ```
+
+3. **Archive-Stories importieren** (optional, für bessere Schätzungen)
+   ```bash
+   # 1000 neueste Jira-Stories mit echten Beschreibungen importieren
+   ./import_jira_stories_robust.py --limit 1000
+   # Ergebnis: ~84% mit vollständigen Beschreibungen (621 Zeichen avg)
+   ```
+
+4. **Embeddings generieren**
+   ```bash
+   venv/bin/python ai/setup_ai.py process --provider sentence_transformers
+   ```
+
+5. **AI Status prüfen**
+   ```bash
+   venv/bin/python ai/setup_ai.py stats
+   # oder via API:
+   curl http://localhost:5000/api/ai-status
+   ```
+
+**Fertig!** Der AI Assistant erscheint nun in der Teamliste mit 🤖 AI Badge und schätzt automatisch bei jeder neuen Story mit.
 
 ### Docker Installation
 
@@ -116,6 +165,16 @@ Eine moderne, Echtzeit-fähige Planning Poker Web-Anwendung für agile Scrum-Tea
 
 ### Zuschauer-Modus
 Aktiviere den Zuschauer-Modus in deinem Profil, um Abstimmungen zu beobachten ohne selbst abzustimmen.
+
+### 🤖 AI Assistant
+Wenn aktiviert, erscheint der **AI Assistant** automatisch in der Teamliste:
+- Schätzt automatisch 2 Sekunden nach Voting-Start
+- Erscheint mit 🤖 AI Badge
+- **Nach dem Reveal** kann jeder die Begründung anzeigen:
+  - Klick auf "💭 Begründung" bei der AI-Karte
+  - Zeigt Claude's Reasoning
+  - Zeigt ähnliche Stories aus dem Archiv mit Similarity-Score
+  - Transparent: Model-Info (claude-opus-4-5-20251101)
 
 ### Story-Kommentare
 Nach Abschluss einer Story können alle Teilnehmer Kommentare hinzufügen:
@@ -155,6 +214,9 @@ ADMIN_PASSWORD_HASH=<generiert-mit-generate_admin_password.py>
 # Datenbank Pfad
 DB_PATH=planning_poker.db
 
+# AI Assistant (optional)
+ANTHROPIC_API_KEY=sk-ant-...        # Claude API Key für AI Assistant
+
 # Feature Toggles
 ENABLE_UNICORN=false                 # Einhorn Easter Egg aktivieren
 UNICORN_DISPLAY_SECONDS=3           # Anzeigedauer in Sekunden
@@ -169,6 +231,7 @@ ENABLE_SPECTATOR_MODE=true          # Zuschauer-Modus aktivieren
 - **Datenbank:** SQLite 3
 - **Frontend:** Vanilla JavaScript, Pico CSS 1.x
 - **Deployment:** Docker, Gunicorn, Eventlet
+- **AI:** Claude Opus 4.5 (Anthropic), sentence-transformers (semantic search)
 
 ### Projektstruktur
 ```
@@ -177,14 +240,17 @@ poker/
 ├── database.py             # SQLite Datenbank-Layer
 ├── utils.py                # Helper-Funktionen
 ├── voting_logic.py         # Konsens-Algorithmen
+├── ai/                     # AI Integration (optional)
+│   ├── estimation.py      # AI-Logik (Claude + Semantic Search)
+│   └── setup_ai.py        # CLI für Embedding-Generierung
 ├── templates/              # Jinja2 Templates
-│   ├── index.html         # Hauptseite
+│   ├── index.html         # Hauptseite mit AI-Badge & Modal
 │   ├── admin_dashboard.html
 │   ├── story_detail.html
 │   └── anleitung.html
 ├── static/
-│   ├── css/style.css      # Custom Styles
-│   └── js/app.js          # WebSocket Client
+│   ├── css/style.css      # Custom Styles inkl. AI-Modal
+│   └── js/app.js          # WebSocket Client + AI-Modal
 ├── .env.example           # Umgebungsvariablen Template
 ├── requirements.txt       # Python Dependencies
 ├── Dockerfile
@@ -193,10 +259,12 @@ poker/
 
 ### Datenbank-Schema
 - **users** - Teilnehmer mit Session-IDs
-- **stories** - User Stories mit Status (pending, voting, revealed, completed)
+- **stories** - User Stories mit Status (pending, voting, revealed, completed), source, jira_key
 - **votes** - Alle Abstimmungen mit Runden-Zuordnung
 - **story_comments** - Kommentare zu Stories
 - **events** - Event-Log für Aktivitäten
+- **ai_estimations** - AI-Begründungen mit ähnlichen Stories
+- **story_embeddings** - Vektoren für Semantic Search
 - **unlock_requests** - (Future Feature)
 
 ## 🔒 Sicherheit
@@ -267,13 +335,15 @@ Bei Divergenz wird der zweithäufigste Wert als Alternative angeboten, falls:
 
 ## 🗺️ Roadmap / Zukünftige Features
 
-- [ ] KI-Teilnehmer mit Begründung der Schätzungen
+- [x] ~~KI-Teilnehmer mit Begründung der Schätzungen~~ ✅ FERTIG!
+- [x] ~~Story-Import aus Jira~~ ✅ FERTIG!
 - [ ] Export als CSV/JSON/Excel
-- [ ] Story-Import aus Jira/GitHub Issues
 - [ ] Team-Statistiken und Velocity-Tracking
 - [ ] Mehrsprachigkeit (i18n)
 - [ ] Custom Fibonacci-Sequenzen
 - [ ] Story-Kategorien und Tags
+- [ ] AI-Confidence-Score anzeigen
+- [ ] Mehrere AI-Modelle zur Auswahl
 
 ## 📝 License
 
@@ -291,5 +361,6 @@ Dies ist ein internes Tool. Bei Fragen oder Feature-Requests bitte an das Entwic
 
 ---
 
-**Version:** 1.0.0
+**Version:** 1.1.0
 **Letztes Update:** Dezember 2024
+**Neu:** 🤖 AI Assistant mit Claude Opus 4.5 Integration

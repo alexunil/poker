@@ -135,6 +135,37 @@ socket.on('user_updated', () => {
     console.log('👤 Event: user_updated');
     location.reload();
 });
+socket.on('story_withdrawn', () => {
+    console.log('↩️ Event: story_withdrawn');
+    location.reload();
+});
+socket.on('story_deleted', () => {
+    console.log('🗑️ Event: story_deleted');
+    location.reload();
+});
+
+// Delete Story Funktion mit Bestätigung
+function deleteStory(storyId, storyTitle) {
+    if (confirm(`Story "${storyTitle}" wirklich löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden.`)) {
+        fetch(`/delete_story/${storyId}`, { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('✅ Story erfolgreich gelöscht');
+                    // WebSocket wird das Update triggern
+                } else {
+                    console.error('❌ Fehler beim Löschen:', data.error);
+                    alert('Fehler beim Löschen: ' + (data.error || 'Unbekannter Fehler'));
+                    location.reload();
+                }
+            })
+            .catch(error => {
+                console.error('❌ Netzwerkfehler beim Löschen:', error);
+                alert('Fehler beim Löschen der Story');
+                location.reload();
+            });
+    }
+}
 
 // Story Dialog Funktionen
 // hasActiveVoting wird von HTML data-attribute gelesen
@@ -208,5 +239,119 @@ document.addEventListener('DOMContentLoaded', () => {
                 closeUnicorn();
             }
         });
+    }
+});
+
+// ============================================================================
+// AI REASONING MODAL
+// ============================================================================
+
+function showAiReasoning(storyId) {
+    const modal = document.getElementById('ai-reasoning-modal');
+    const content = document.getElementById('ai-reasoning-content');
+
+    // Modal anzeigen
+    modal.style.display = 'flex';
+
+    // Loading anzeigen
+    content.innerHTML = '<div class="loading">Lade Begründung...</div>';
+
+    // API Call
+    fetch(`/api/ai-reasoning/${storyId}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('AI-Begründung nicht verfügbar');
+            }
+            return response.json();
+        })
+        .then(data => {
+            // Render reasoning
+            content.innerHTML = renderAiReasoning(data);
+        })
+        .catch(error => {
+            content.innerHTML = `
+                <div style="text-align: center; padding: 2rem; color: var(--error-color);">
+                    <p>❌ Fehler beim Laden der Begründung</p>
+                    <p style="font-size: 0.9rem; color: var(--muted-color);">${error.message}</p>
+                </div>
+            `;
+        });
+}
+
+function closeAiReasoning() {
+    const modal = document.getElementById('ai-reasoning-modal');
+    modal.style.display = 'none';
+}
+
+function renderAiReasoning(data) {
+    let html = '';
+
+    // Reasoning Text
+    html += `
+        <div class="reasoning-section">
+            <h4>📝 Begründung</h4>
+            <div class="reasoning-text">${escapeHtml(data.reasoning)}</div>
+        </div>
+    `;
+
+    // Similar Stories
+    if (data.similar_stories && data.similar_stories.length > 0) {
+        html += `
+            <div class="reasoning-section">
+                <h4>🔍 Ähnliche Stories</h4>
+                <ul class="similar-stories">
+        `;
+
+        data.similar_stories.forEach(story => {
+            const similarity = (story.similarity * 100).toFixed(0);
+            html += `
+                <li class="similar-story-item">
+                    <div class="story-title">
+                        ${escapeHtml(story.title)}
+                        <span class="similarity-badge">${similarity}% ähnlich</span>
+                    </div>
+                    <div class="story-meta">
+                        ${story.points} Story Points
+                    </div>
+                </li>
+            `;
+        });
+
+        html += `
+                </ul>
+            </div>
+        `;
+    }
+
+    // Model Info
+    html += `
+        <div class="reasoning-section" style="border-top: 1px solid var(--border-color); padding-top: 1rem; margin-top: 1rem;">
+            <p style="font-size: 0.85rem; color: var(--muted-color); margin: 0;">
+                Geschätzt mit: ${escapeHtml(data.model_used)}
+            </p>
+        </div>
+    `;
+
+    return html;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Modal schließen bei ESC-Taste
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeAiReasoning();
+    }
+});
+
+// Modal schließen bei Klick auf Overlay
+document.addEventListener('click', (e) => {
+    const modal = document.getElementById('ai-reasoning-modal');
+    if (e.target === modal) {
+        closeAiReasoning();
     }
 });
